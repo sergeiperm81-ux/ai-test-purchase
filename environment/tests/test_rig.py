@@ -248,7 +248,7 @@ class TestCallLog(RigCase):
         os.environ["TEST_PURCHASE_BUDGET_CAPS"] = json.dumps(
             {"per_utc_day": {"USD": 0.003}, "per_scope": {"USD": 0.003}})
         rec, c = self.recorder(), providers.config_for("oa-model")
-        results = []
+        results, unexpected = [], []
 
         def worker(i):
             try:
@@ -256,12 +256,16 @@ class TestCallLog(RigCase):
                 results.append(True)
             except call_log.BudgetExceeded:
                 results.append(False)
+            except BaseException as e:          # anything else is a defect, not a refusal
+                unexpected.append(repr(e))
 
         threads = [threading.Thread(target=worker, args=(i,)) for i in range(8)]
         for t in threads:
             t.start()
         for t in threads:
             t.join()
+        self.assertEqual(unexpected, [])
+        self.assertEqual(len(results), 8)
         self.assertEqual(results.count(True), 1)
 
     def test_call_cap_of_a_purchase(self):

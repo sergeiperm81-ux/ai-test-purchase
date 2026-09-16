@@ -100,23 +100,35 @@ class LedgerLock:
                 os.write(fd, str(os.getpid()).encode("ascii"))
                 os.close(fd)
                 return self
-            except FileExistsError:
-                try:
-                    if time.time() - os.path.getmtime(self.path) > LOCK_STALE_S:
-                        os.remove(self.path)
-                        continue
-                except OSError:
+            except (FileExistsError, PermissionError) as e:
+                # On Windows a lock file that another process is creating or deleting refuses
+                # access for a moment: that is the lock being busy, and it is waited for like
+                # an existing lock. An access error that outlasts the wait is raised as it is.
+                busy = e
+            try:
+                if time.time() - os.path.getmtime(self.path) > LOCK_STALE_S:
+                    os.remove(self.path)
                     continue
-                if time.time() > deadline:
-                    raise BudgetExceeded("the spend ledger stayed locked for %d s: no attempt is "
-                                         "made without a reservation" % LOCK_WAIT_S)
-                time.sleep(0.02)
+            except (FileNotFoundError, PermissionError):
+                pass
+            if time.time() > deadline:
+                if isinstance(busy, PermissionError):
+                    raise busy
+                raise BudgetExceeded("the spend ledger stayed locked for %d s: no attempt is "
+                                     "made without a reservation" % LOCK_WAIT_S)
+            time.sleep(0.02)
 
     def __exit__(self, *exc):
-        try:
-            os.remove(self.path)
-        except OSError:
-            pass
+        # the same transient refusal can meet the removal; retry it briefly rather than leave
+        # a lock that the others would have to wait out as stale
+        for _ in range(100):
+            try:
+                os.remove(self.path)
+                return
+            except FileNotFoundError:
+                return
+            except PermissionError:
+                time.sleep(0.02)
 
 
 def ledger_state():

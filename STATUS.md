@@ -20,7 +20,10 @@
 
   The next clean run will not have these gaps: every run now keeps its documents and records
   what the analyst read. Three files of this evidence also contain the author's local folder
-  path; they are frozen and left as they are.
+  path; they are frozen and left as they are. The purchaser's e-mail address in it,
+  alex.morgan1884@gmail.com, was invented for the scenario and is not a mailbox of the
+  author; later runs use addresses on a reserved .example domain, which cannot belong to
+  anyone.
 - **The rig.** Exact request and response of every model call kept with checksums; a failed
   call repeated on its own; hard limits on calls, tool use and money; the cost computed per
   currency from published rates and labelled as computed.
@@ -44,6 +47,8 @@
 
 ## What is fixed before day 1
 
-The schedule, the blind labels, the documents, the code and the model list are pinned by
+The exact versions of Python and of every dependency, the operating system and the
+architecture are recorded with the plan; `requirements.txt` gives lower bounds only, which
+is enough for review but not for a frozen series. The schedule, the blind labels, the documents, the code and the model list are pinned by
 checksum in the plan of the series before the first purchase. After that, nothing about the
 measurement changes; corrections, if any, are made as a new versioned series and said so.
