@@ -1,0 +1,26 @@
+# The API key never leaves this machine and never enters a repository.
+.env
+*.env
+*.key
+*.apkey
+*apikey*
+*api_key*
+openai*
+
+# The mapping of blind labels to model names stays out of the repository
+series/*/model_key.json
+series/*/models.json
+
+# Python
+__pycache__/
+*.pyc
+
+# Local logs of manual runs
+run_log*.txt
+analyst_log*.txt
+*.log
+
+# The spend ledger and the confirmation log of this machine: local state, published only
+# deliberately. A run keeps its own copy of the confirmations it ran under.
+ledger/
+approvals/

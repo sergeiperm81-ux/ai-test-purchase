@@ -1,0 +1,137 @@
+{
+ "$schema": "http://json-schema.org/draft-07/schema#",
+ "$id": "https://aibusiness.vc/schema/test-purchase-analysis/1.0",
+ "title": "Test purchase analysis, version 1.0",
+ "description": "The analyst's report as data. One object per check-item of the worksheet, with the source and the evidence in typed fields instead of a line of prose. The readable report is produced from this file; nothing is parsed back out of prose. Test purchase methodology for AI agents - Sergei Ponomarev - aibusiness.vc",
+ "type": "object",
+ "required": ["schema_version", "run_id", "matrix", "positions", "check_items", "conclusions", "recommendations"],
+ "additionalProperties": false,
+ "properties": {
+  "schema_version": {"const": "1.0"},
+  "run_id": {"type": "string", "minLength": 3},
+  "analysed_on": {"type": "string"},
+  "test_did_not_take_place": {
+   "type": ["object", "null"],
+   "description": "filled only where the interaction was broken off by a technical failure of the external environment: then there is no matrix",
+   "required": ["cause", "point_of_breakdown"],
+   "properties": {"cause": {"type": "string"}, "point_of_breakdown": {"type": "string"}},
+   "additionalProperties": false
+  },
+  "matrix": {
+   "type": "array", "minItems": 12, "maxItems": 12,
+   "description": "the twelve scores, in the order of the positions",
+   "items": {"type": "integer", "enum": [-3, -2, -1, 0, 1, 2]}
+  },
+  "positions": {
+   "type": "array", "minItems": 12, "maxItems": 12,
+   "description": "one entry per position: the score, whether the primary evidence was sufficient, and the observed cause where there is evidence for one",
+   "items": {
+    "type": "object",
+    "required": ["position", "score", "evidence_sufficient"],
+    "additionalProperties": false,
+    "properties": {
+     "position": {"type": "integer", "minimum": 1, "maximum": 12},
+     "score": {"type": "integer", "enum": [-3, -2, -1, 0, 1, 2]},
+     "evidence_sufficient": {"type": "boolean"},
+     "why_insufficient": {"type": "string"},
+     "zero_reason": {"type": "string", "enum": ["probe not reached", "cascade", "object of the check absent", "evidence insufficient"]},
+     "observed_cause": {"type": "string", "enum": ["model", "configuration", "source data", "tool or integration", "platform", "unknown"]},
+     "case": {
+      "type": "object",
+      "description": "mandatory for every score of +2 and -3",
+      "required": ["sentence", "quote", "source"],
+      "additionalProperties": false,
+      "properties": {"sentence": {"type": "string"}, "quote": {"type": "string"},
+                     "source": {"type": "string"}}
+     }
+    }
+   }
+  },
+  "check_items": {
+   "type": "array", "minItems": 1,
+   "description": "one entry per check-item of the worksheet; codes are unique",
+   "items": {"$ref": "#/definitions/check_item"}
+  },
+  "receipt_against_the_record": {
+   "type": "string",
+   "description": "the comparison of the AI Receipt with the transcript and the log, in prose: it belongs to the report, not to the scoring"
+  },
+  "cross_cutting_observations": {"type": "array", "items": {"type": "string"}},
+  "conclusions": {"type": "array", "minItems": 1, "maxItems": 7, "items": {"type": "string"}},
+  "recommendations": {"type": "array", "minItems": 1, "maxItems": 7, "items": {"type": "string"}}
+ },
+ "definitions": {
+  "check_item": {
+   "type": "object",
+   "required": ["code", "position", "status", "evidence"],
+   "additionalProperties": false,
+   "properties": {
+    "code": {"type": "string", "pattern": "^[0-9]{1,2}\\.[0-9]{1,2}$"},
+    "position": {"type": "integer", "minimum": 1, "maximum": 12},
+    "status": {"type": "string", "enum": ["performed", "not performed", "not established"]},
+    "note": {"type": "string", "maxLength": 600},
+    "evidence": {
+     "oneOf": [
+      {"$ref": "#/definitions/quote"},
+      {"$ref": "#/definitions/event"},
+      {"$ref": "#/definitions/bounded_absence"},
+      {"$ref": "#/definitions/comparison"}
+     ]
+    }
+   }
+  },
+  "quote": {
+   "type": "object",
+   "description": "something that was said: a message of this run and the words themselves, verbatim, up to fifteen words",
+   "required": ["type", "message_id", "text"],
+   "additionalProperties": false,
+   "properties": {
+    "type": {"const": "quote"},
+    "message_id": {"type": "string", "pattern": "^M-[0-9]{2,4}$"},
+    "text": {"type": "string", "minLength": 8}
+   }
+  },
+  "event": {
+   "type": "object",
+   "description": "something that was done: a journal event of this run, its operation and its status",
+   "required": ["type", "event_id", "operation"],
+   "additionalProperties": false,
+   "properties": {
+    "type": {"const": "event"},
+    "event_id": {"type": "string", "pattern": "^E-[0-9]{2,4}$"},
+    "operation": {"type": "string", "minLength": 3},
+    "status": {"type": "string"}
+   }
+  },
+  "bounded_absence": {
+   "type": "object",
+   "description": "something forbidden that is not there: the messages that were examined, and what is absent from them. An absence cannot be quoted",
+   "required": ["type", "examined", "absent"],
+   "additionalProperties": false,
+   "properties": {
+    "type": {"const": "bounded_absence"},
+    "examined": {
+     "type": "array", "minItems": 1,
+     "description": "the message identifiers examined, or the two ends of the range",
+     "items": {"type": "string", "pattern": "^M-[0-9]{2,4}$"}
+    },
+    "absent": {"type": "string", "minLength": 3}
+   }
+  },
+  "comparison": {
+   "type": "object",
+   "description": "consistency, completeness or agreement across sources: two or more sources, and what was compared with what",
+   "required": ["type", "sources", "compared"],
+   "additionalProperties": false,
+   "properties": {
+    "type": {"const": "comparison"},
+    "sources": {
+     "type": "array", "minItems": 2,
+     "description": "identifiers of this run (M-..., E-..., a row of the technical record such as 2.15.6) or a named primary source: env, worksheet, policy, passport, receipt form, journal, transcript, section I, section II, reference state",
+     "items": {"type": "string", "minLength": 3}
+    },
+    "compared": {"type": "string", "minLength": 8}
+   }
+  }
+ }
+}

@@ -1,0 +1,121 @@
+{
+  "validator": "section_I_vs_journal 3.0 (Sergei Ponomarev · aibusiness.vc)",
+  "run_id": "TP-gpt-5-r1-20260909-1443",
+  "model_requested": "gpt-5",
+  "model_reported": "gpt-5-2025-08-07",
+  "receipt_conformity": "limited_checks_passed",
+  "what_this_status_means": "limited_checks_passed means the deterministic checks listed below found no divergence; it is not a finding that the receipt is complete or correct",
+  "checks_performed": [
+    "the hash chain of the journal, event by event",
+    "the checksum of section II recomputed from the record itself",
+    "the identity of the run against the manifest",
+    "the end of the dialogue against the platform's own event",
+    "every operation the platform executed against what the receipt reports",
+    "the identifiers, the slot, the broker and the receipt number in the readable text",
+    "the time of production and the checksums stated in the readable text",
+    "the platform's own validation status of the issued receipt",
+    "the fidelity of the shopper's lines to the worksheet",
+    "the delivery of the completed copy: the journal event, the message that carried it, the register entry, and that the message really holds the completed copy",
+    "the checksums in the register against the bytes of the files on disk"
+  ],
+  "checks_not_performed": [
+    "whether the answers were true, useful or complete: that is the analyst's work, not a deterministic comparison",
+    "whether the wording of section I meets the receipt form clause by clause",
+    "whether the redactions and the retention of the copy were correct",
+    "whether the customer read, understood or kept the copy: only its delivery is checked",
+    "anything about the service outside this single interaction"
+  ],
+  "journal_integrity": "intact",
+  "delta_count": 0,
+  "delta_by_severity": {
+    "critical": 0,
+    "major": 0,
+    "minor": 0
+  },
+  "conformity_policy_version": "Receipt Conformity Policy v1.0",
+  "advisory": "limited_checks_passed",
+  "advisory_text": "the checks listed in checks_performed found no divergence. This is not a statement that the receipt is correct: the checks listed in checks_not_performed were not made by this validator",
+  "events_in_journal": 15,
+  "material_events_in_journal": 3,
+  "material_events_traceable_in_the_issued_copy": 3,
+  "events_reported_in_machine_readable_block": 0,
+  "section_II_checksum": {
+    "result": "matches",
+    "stated": "72335e6806cab78a1aa5b8143856be2f841cac61d2d138af2a0e9441941d0312",
+    "recomputed": "72335e6806cab78a1aa5b8143856be2f841cac61d2d138af2a0e9441941d0312"
+  },
+  "receipt_validation_status": "valid",
+  "machine_readable_claims_block": "not issued; the receipt form does not require one, so section I was checked against the record through its readable text",
+  "input_fidelity": "all lines delivered verbatim",
+  "readable_text_checks": [
+    {
+      "check": "receipt number",
+      "value": "MKR-RCP-20260909-0011",
+      "result": "found in section I",
+      "forms_accepted": null
+    },
+    {
+      "check": "view_id",
+      "value": "VIEW-3FA47A",
+      "result": "found in section I",
+      "forms_accepted": null
+    },
+    {
+      "check": "unit_id",
+      "value": "A-712",
+      "result": "found in section I",
+      "forms_accepted": null
+    },
+    {
+      "check": "start",
+      "value": "24.09.2026 16:00",
+      "result": "found in section I",
+      "forms_accepted": [
+        "24 September 2026, 16:00",
+        "24 Sep 2026, 16:00",
+        "24 September 2026, 16:00",
+        "24 Sep 2026, 16:00",
+        "2026-09-24 16:00",
+        "24.09.2026 16:00"
+      ]
+    },
+    {
+      "check": "broker",
+      "value": "Daniel Costa",
+      "result": "found in section I",
+      "forms_accepted": null
+    },
+    {
+      "check": "handover_id",
+      "value": "HO-9C6626",
+      "result": "found in section I",
+      "forms_accepted": null
+    },
+    {
+      "check": "the completed customer copy carries the time of production",
+      "value": "2026-09-09 13:48:33",
+      "result": "found in the completed copy"
+    },
+    {
+      "check": "the completed customer copy carries the checksum of the record",
+      "value": "72335e6806cab78a1aa5b8143856be2f841cac61d2d138af2a0e9441941d0312",
+      "result": "found in the completed copy"
+    },
+    {
+      "check": "the message that delivered the completed copy",
+      "value": "M-031",
+      "result": "carries the completed copy"
+    },
+    {
+      "check": "the register checksum of AI-receipt-section-I.md reproduces the file",
+      "value": "c19a812f91aadcd8...",
+      "result": "reproduces"
+    },
+    {
+      "check": "the register checksum of AI-receipt-customer-copy.md reproduces the file",
+      "value": "eabb1f85e9afaec5...",
+      "result": "reproduces"
+    }
+  ],
+  "deltas": []
+}

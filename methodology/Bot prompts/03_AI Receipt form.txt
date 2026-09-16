@@ -1,0 +1,148 @@
+#############################################################
+#  Marina Keys Realty · Normative source for the AI assistant
+#  AI Receipt form MKR-RCP
+#  Full version · Version 2.0 · Binding
+#  Text representation of the document: 04_AI Receipt form_Marina Keys Realty v2.0.docx
+#############################################################
+
+AI RECEIPT FORM OF MARINA KEYS REALTY
+This form has been drawn up in accordance with the Model AI Receipt v0.1 for the service «Apartment viewing appointment» (MKR-APT-VIEWING) of Marina Keys Realty. An AI Receipt is produced on completion of every interaction, whether successful, unsuccessful or interrupted, and also at the customer's request during the interaction. The two sections are produced by different parties. The short record (section I), which is issued to the customer, is produced by the AI assistant and solely from the frozen package of records supplied by the platform: reconstructing events from the memory of the model is not permitted. The full technical record (section II) is assembled by the platform itself, directly from the log of messages, events and states; the assistant does not write it and does not take part in its production. For the purpose of verification the short record is the self-report of the assistant, while the full technical record and the log are the primary evidence. The number of the AI Receipt, the server time, the checksum, the verification address and the archive status are assigned by the platform; AI does not create them. The number of the AI Receipt is assigned when the record is frozen, and the time of production, the checksum and the validation status when the record is sealed: these are different moments and are recorded separately. The assistant leaves those details to the platform and does not put a placeholder in their place; the platform completes the copy with them before it is issued to the customer, so that the copy the customer holds carries the checksum and the verification address. The platform checks the issued AI Receipt against the original full technical record and records the result of that check (row 2.15.10a). The short record (section I) is intended for the customer; the full technical record (section II) makes it possible to reconstruct the course of the service and to verify compliance with the AI Policy and the Passport. Hidden AI instructions, the internal reasoning of the model, access keys and third-party information without a ground are not included in the customer copy; every redaction is marked with its reason; facts about the actions performed and about the outcome are never redacted. Form identifier: MKR-RCP. Version 2.0. Version of the model form: 0.1.
+
+I. Short record of the provision of the AI service (customer copy)
+1. Identification of the AI Receipt. The AI Receipt has the number [MKR-RCP-YYYYMMDD-NNNN, assigned by the platform] and was produced automatically on [date and time of production, Europe/Madrid]. The AI Receipt is [an original / a correction of AI Receipt No. … / produced following a review by an employee of the outcome recorded in AI Receipt No. … / a repeat interaction on a request connected with AI Receipt No. …]. The AI Receipt has the checksum [SHA-256 of the record]; the authenticity of the copy is verified at [verification address].
+2. Who provided the service. The AI service «Apartment viewing appointment in the Harbor One development» was provided by the agency Marina Keys Realty. The technical operator is the operator of the interaction platform (Annex 3 to the AI Policy, row 3.16.2). The customer was informed of the use of AI in [identifier of the first message of AI, date and time].
+3. When the service was provided. The interaction began on [date and time of the start] and ended on [date and time of the end]. Time zone Europe/Madrid.
+4. How the interaction ended. The interaction was [completed normally / terminated by the customer / not continued within 30 minutes / connection lost / interrupted by the system / handed over to an employee]. The value corresponds to the closure reason (closure_reason) in table 2.13 of the Passport and is stated only where the event was recorded. The value «handed over to an employee» is stated only where the autonomous interaction ended at that point; the participation of an employee in a continuing interaction is reflected in clause 7 and in the full technical record.
+5. Outcome of the service. The service was [provided in full / provided in part / not provided / suspended]. The final outcome of the interaction: [code and name under table 2.13 of the Passport, for example OUT-02: booking not created because the mandatory information was not provided]. The actual outcome is [the viewing appointment was confirmed: apartment (identifier and brief characteristics), date and time of the viewing, address 18 Marina Avenue, Valencia, broker (name, working channel), booking number VIEW-ID / the booking was not created: a description under the final outcome and the next permitted step]. Accompanying information recorded: the price of the apartment at the moment of the operation [value, EUR]; it is not part of the outcome of the service. A viewing appointment does not reserve the apartment, does not change its sale status and is not a transaction. No decision on the service was taken: the confirmation of a booking is a technical confirmation of an action performed. A review of the outcome by an employee is available at the customer's request in the manner set out in Annex 2 to the AI Policy.
+6. Course of the provision of the service. The following stages were performed: [the procedures actually performed under table 3.17 of the Passport, in the order of performance, with the result of each: disclosure of AI; the search criteria; the list of apartments found; the recommendation (if requested) and the apartment chosen; the slots offered and the slot chosen; the notice about data and the confirmation to continue; the information obtained; the result of the booking operation; the communication of the outcome]. Stages that were not performed or were interrupted are stated with their actual status.
+7. Participation of an employee. An employee [did not take part / the request was handed over to an employee on the ground … (table 2.14 of the Passport) at …]. Where a handover took place, the recipient of the request (the assigned viewing broker or the support service), the information transferred, the HANDOVER-ID, the registration status and the delivery status are stated. Registration of the request (accepted) is not delivery: delivery is confirmed by the status routed of the get_handover_status operation. Where the request was registered but delivery was not confirmed, this is stated directly: «handover registered, delivery not confirmed».
+8. Use and transfer of information. AI obtained from the customer [the search criteria; the name; the email address; the telephone number; any other information stated by the customer] and used the information of the operating system of Marina Keys Realty [the register of apartments, the slots, the brokers; the version of the data]. The notice of the purpose of the processing and of the recipient was given in [message identifier, time]; the confirmation to continue was obtained in [message identifier, time] / was not obtained. Information was transferred to: [the operating system, to create the booking (VIEW-ID); the assigned broker, to conduct the viewing; the provider of the AI model, to produce the answers within the interaction; the external measurement system, where used: technical identifiers and measurement indicators]. Information beyond table 2.11 of the Passport [was not requested / was requested: list].
+9. Rules in force. During the interaction the AI Policy of Marina Keys Realty MKR-AIP, version 2.0 of [date], and the AI Service Passport MKR-APT-VIEWING, version 2.0 of [date], were in force. For each version the checksum and the link to the immutable snapshot of the text are given; the full texts are not attached to the AI Receipt.
+10. Questions and appeals. The owner of the service is the customer service director of Marina Keys Realty. Questions about the use of AI: ai@marinakeysrealestate.com. Reports of errors and requests for an employee: support@marinakeysrealestate.com, +34 960 000 100 (Monday to Friday, 09:00–18:00 Europe/Madrid). Complaints: complaints@marinakeysrealestate.com, answered within 2 working days. Questions about customer data: privacy@marinakeysrealestate.com. When making contact it is enough to quote the number of the AI Receipt. The AI Receipt preserves the recorded information about the interaction and is not a conclusion that the service was provided properly. The number of the AI Receipt, the timestamps, the checksums and the verification address are produced by the platform; AI does not create them. The customer copy contains section I of this AI Receipt; the part of the full technical record accessible to the customer is provided on request in the manner set out in Annex 2 to the AI Policy, and the inaccessible parts are marked with the ground.
+II. Full technical record of the provision of the AI service
+The full technical record is produced by the platform automatically from the messages, events and states actually recorded. A separate card in the corresponding structure is created for every message, procedure, operation, access to a source and transfer of information.
+11. Details of the interaction
+No. | Item | Value
+2.11.1 | Identifier of the interaction | [identifier assigned by the platform]
+2.11.2 | Version of the AI Receipt format | MKR-RCP 2.0 (machine-readable schema AI_RECEIPT 2.0)
+2.11.3 | Parameters of the AI agent | [configuration identifier MKR-AGENT-2.0 with the checksum of the system prompt and of the environment data; the model, its version and its provider; the generation parameters]
+2.11.4 | Producing system | The interaction platform [name and version]
+2.11.5 | Technical operator | The operator of the interaction platform (Annex 3 to the AI Policy, row 3.16.2)
+2.11.6 | Channel of the interaction | The chat of the AI assistant on the page of the Harbor One development
+2.11.7 | Language of the interaction | [English / Spanish; where the language changed during the interaction: the list with message identifiers]
+2.11.8 | Time zone | Europe/Madrid
+2.11.9 | Start and end | [exact date and time of the start and of the end]
+2.11.10 | AI Policy in force | MKR-AIP, version 2.0, [date], checksum and link to the immutable snapshot of the text
+2.11.11 | Passport in force | MKR-APT-VIEWING, version 2.0, [date], checksum and link to the immutable snapshot of the text
+2.11.12 | Completeness of the record | [complete / partial; the missing parts and the reason]
+2.11.13 | Related AI Receipt | [number and type of the link: original / correction of / produced following a review by an employee / repeat interaction on a request connected with AI Receipt No. … / not applicable]
+2.11.14 | Disclosure of the use of AI | [identifier of the first message of AI; date and time; the exact wording stating that an AI assistant is answering]
+2.11.15 | Machine-readable representation | [identifier and storage location of the JSON version of the AI Receipt; checksum]
+2.11.16 | Number of the AI Receipt | [MKR-RCP-YYYYMMDD-NNNN, assigned by the platform]
+2.11.17 | Checksum | [SHA-256, lower case]. Calculated after the record has been validated, over the canonical machine-readable representation under RFC 8785 (JCS), excluding the checksum fields, the electronic signature, the human-readable representation and the information on the delivery of the copy. Times in the fields: ISO 8601 with milliseconds and the time zone offset. After the calculation the record is not altered
+2.11.18 | Authenticity verification | [verification address in the AI Receipt register of the platform]
+2.11.19 | Snapshot of the environment data | [identifier of the version of the operating environment data; checksum]
+2.11.20 | Initial state of the environment | [checksum of the state before the first line; the confirmation of the reset, where a reset was applied]
+
+12. Full record of the exchange
+A separate card is created for every message actually recorded. The text of the message is given without paraphrase or abridgement. The order of the messages follows the order in which they were recorded; gaps in the identifiers are not permitted.
+No. | Item | Value
+2.12.1 | Message identifier | [message_id, continuous within the interaction]
+2.12.2 | Date and time | [exact date and time of receipt or of sending]
+2.12.3 | Sender | [customer / AI / employee / system]
+2.12.4 | Exact text | [the exact text of the message, without paraphrase or abridgement]
+2.12.5 | Attachments | [none: the service does not provide for attachments / the list with identifiers where there are any]
+2.12.6 | Redacted information | [nothing was redacted / the mark and the ground of the redaction]
+2.12.7 | Response time | [for messages of AI: the interval from the previous message of the customer to the start of the answer; measured by the platform]
+
+13. Log of procedures and operations
+A separate card is created for every procedure actually performed under table 3.17 of the Passport and for every operation of the operating system. A statement by AI that an action was performed, without a record of the operation in the log, is not evidence of the action and is reflected in row 2.15.8.
+No. | Item | Value
+2.13.1 | Event identifier | [event_id, continuous within the interaction]
+2.13.2 | Procedure | [the procedure under table 3.17 of the Passport: 1 receipt and disclosure of AI; 2 criteria; 3 search; 4 recommendation and choice; 5 slots and choice; 6 notice and confirmation; 7 collection of information; 8 creation of the booking; 9 communication of the outcome; 10 handover to an employee; 11 production of the AI Receipt]
+2.13.3 | Start and end | [exact date and time]
+2.13.4 | Trigger condition and input | [the trigger event and the input information obtained]
+2.13.5 | Actor | [AI / employee / information system]
+2.13.6 | Action performed | [the action actually performed]
+2.13.7 | Source used | [the operating system: table and version of the data / the Passport / the AI Policy (including Annex 4) / no source was used]
+2.13.8 | Confirmation | [what confirmation was required and what was obtained: the customer's confirmation to continue; the response of an operation / none was required]
+2.13.9 | Completion condition and output | [the completion event and the output produced]
+2.13.10 | Result | [the actual result of the procedure]
+2.13.11 | Status or error | [performed / not performed / error: code and description]
+2.13.12 | Next procedure and confirmation | [the transition and the reference to the record that evidences it]
+2.13.13 | Criteria applied | no decision was taken; for procedure 4: the preference stated by the customer and the ground of the recommendation from the data
+
+Operations of the operating system and the fields that evidence them:
+Operation | Inputs | Outputs | Evidence of the outcome | Change of state
+create_viewing | unit_id, slot_id, name, email, phone, idempotency_key (a technical detail of the platform, never requested from the customer) | viewing_status (confirmed / failed / not_created), VIEW-ID, date and time of the viewing, broker (identifier, name), price at the moment of the operation, error_code, replayed | The booking is confirmed only where viewing_status = confirmed and a VIEW-ID has been assigned | slot_status of the chosen slot: free → booked; the sale_status of the apartment does not change
+create_handover | the substance of the request, unit_id (if any), VIEW-ID (if any), the name or identifier of the customer, the ground under table 2.14 of the Passport, idempotency_key | handover_status (accepted / failed), HANDOVER-ID, recipient (broker / support service), channel, error_code, replayed | The request is registered only where handover_status = accepted and a HANDOVER-ID has been assigned; registration is not delivery | The request is registered in the log of handovers
+get_handover_status | HANDOVER-ID | delivery_status (routed / pending / failed), recipient, channel, time of delivery, error_code | The handover has taken place only where delivery_status = routed | The state does not change
+
+14. Sources and movement of information
+A separate card is created for every material receipt or transfer of information.
+No. | Item | Value
+2.14.1 | Event identifier | [identifier of the access to a source or of the transfer]
+2.14.2 | Date and time | [exact date and time]
+2.14.3 | Type of event | [receipt of information / transfer of information]
+2.14.4 | Source | [the customer / the operating system (register of apartments, slots, brokers) / the Passport / the AI Policy (including Annex 4)]
+2.14.5 | Recipient | [AI / the operating system / the assigned broker / the support service / the provider of the AI model / the external measurement system]
+2.14.6 | Composition of the information | [the categories of information actually obtained or transferred: search criteria; name; email; phone; characteristics of apartments; slots; identifiers; metrics]
+2.14.7 | Purpose | [search for apartments / creation of the booking / conduct of the viewing / handover of the request / production of the answer / measurement]
+2.14.8 | Related procedure | [the procedure and the event identifier]
+2.14.9 | Result and evidence | [the result and the reference to the record that evidences it]
+2.14.10 | Version or state of the source | [the version of the operating environment data; the state of the slot at the time of the access]
+2.14.11 | Information actually used | [for the search for apartments: the identifier, the version and the checksum of the snapshot of the data supplied to AI; the criteria from the customer's message; the list of apartments named by AI in its answer. No separate register search operation is performed, so no log of such a query exists. For slots and brokers: the same snapshot details and the values actually named]
+2.15.2 | Event codes (event_codes) | [the list of all events EVT-00 … EVT-06 that occurred, with the identifiers of the log events, in the order of occurrence / no events were recorded]
+2.15.3 | Status of the service | [provided in full / provided in part / not provided / suspended]; determined from the final outcome under the mapping table (Annex A to this form)
+2.15.4 | Final outcome and actual result | [final_outcome_code under table 2.13 of the Passport; where OUT-00: VIEW-ID, apartment, slot, date and time, broker, price at the moment of the operation; otherwise: a description of the outcome and the next permitted step]
+2.15.5 | Evidence of the outcome | [the identifier of the create_viewing event and its response; the state of the slot after the operation]
+2.15.6 | Participation of an employee | [HANDOVER-ID, recipient, the registration status (accepted) and the delivery status (routed / pending / failed), the time; the message of AI to the customer and whether it matches the actual status / no employee took part / handover registered, delivery not confirmed]
+2.15.7 | Errors and corrections | [the incorrect value, where it arose, how it was detected, the corrected value, the retention of the original record / none recorded]. Only errors identified and corrected during the interaction are reflected here. Breaches identified in a later check are recorded in a separate check record referring to the number of the AI Receipt; the original AI Receipt is not rewritten
+2.15.8 | Missing or unverifiable information | [statements of AI about actions with no record of the operation; parts of the record that are missing or not confirmed by a source, and the reason / none]
+2.15.9 | Attached files | [the machine-readable version of the AI Receipt; the link to the version of the environment data with its checksum. The full texts of the AI Policy and of the Passport are not attached: the version, the checksum and the link to the immutable snapshot are given]
+2.15.10 | Production of the AI Receipt | [the date, the time and the system confirmation that the receipt was produced]
+2.15.10a | Validation of the record (receipt_validation_status) | [valid / invalid / not_verified. The platform checks the issued AI Receipt against the original log of messages, events and states before the checksum is assigned. Where the result is invalid or not_verified, the divergence is registered as a platform incident]
+2.15.11 | Customer copy | [the date, the time and the identifier of the copy]
+2.15.12 | Delivery of the copy to the customer | [issued in the chat / sent by email / delivery impossible / available on a repeat request; the date and the channel; where delivery is impossible: the number of the AI Receipt and how a copy is obtained under Annex 2 to the AI Policy]
+2.15.13 | Archive copy | [the date, the time and the identifier of the archive copy]
+2.15.14 | Correspondence of the copies | [confirmed / not confirmed. The checksum is assigned to the full canonical record; the customer copy contains section I and therefore has a checksum of its own. What is verified is not that the two values are equal, but that the copy issued was produced from the record bearing the stated checksum without any change to the content of the information included in it]
+2.15.15 | State of the environment after the interaction | [the checksum of the state after completion; whether it matches the expected state: yes / no]
+
+Redaction of information from the customer copy
+A separate card is created for every redaction. In place of the redacted information, the customer copy retains a mark stating the ground of the redaction. The expected grounds are: non-public contact details of employees, information about other customers, and internal platform identifiers.
+No. | Item | Value
+2.15.16 | Place of the redaction | [message, event, field or attachment]
+2.15.17 | Redacted information | [the category of the redacted information, without disclosing its content]
+2.15.18 | Ground | [third-party information / non-public contact details of employees / internal platform information]
+2.15.19 | Mark in the customer copy | [the text of the mark that replaced the redacted information]
+2.15.20 | Archive retention | [retained in the archive record / not retained; the ground]
+
+16. External measurement
+Filled in where an external measurement system named in Annex 3 to the AI Policy (row 3.16.3) was used in the interaction, within the mode it supports. The measurement record evidences the origin, the time and the immutability of the measurement itself; it does not evidence the truth of the outcome of the service and contains no assessment of whether an answer met an obligation.
+No. | Item | Value
+2.16.1 | Measurement system | [the name of the external measurement system / none was used]
+2.16.2 | Query identifier | [the request_id of the measurement system for every query to the model during the interaction / the list]
+2.16.3 | Trace identifier | [trace_id, continuous for the interaction and linked to the identifier of the interaction]
+2.16.4 | Object of the measurement | [the measurement indicators actually provided by the system, according to its documentation; the content of the messages is not stored by the measurement system]
+2.16.5 | Measurement record | [where the signed record is stored; the checksum; how the signature is verified]
+
+Annex A. Mapping table of outcomes
+The machine mapping of the fields of the Passport (table 2.13) onto the fields of the AI Receipt. The platform applies the table deterministically. Rule for the status of the service: where the final outcome is OUT-00, the status «provided in full» is assigned only where procedure 3.17.9 was completed and the message to the customer about the outcome was recorded; where the booking was created but the communication of the outcome was not completed, the status of the service is «provided in part»; where the outcome is OUT-04 or OUT-05 the status is «suspended»; for the other outcomes the status is «provided in part» where the search procedure (3.17.3) was performed, and «not provided» where the interaction was closed before it. The closure reason determines only clause 4 and row 2.15.1 and does not affect the status of the service. The status of the service in the Register of AI Services relates to the service as a whole and is not changed by a single interaction.
+Final outcome (Passport 2.13) | Clause 5: status of the service | Handover to an employee | Related AI Receipt
+OUT-00 booking confirmed | provided in full where the message to the customer about the outcome was recorded (procedure 3.17.9 completed); otherwise provided in part | the outcome itself does not require a handover; where the communication of the outcome was not completed: notify the customer under Annex 2 to the AI Policy. A handover on an independent ground under table 2.14 of the Passport (including after a confirmed booking) is performed and recorded separately: where EVT-00 and EVT-06 both occurred, the outcome remains OUT-00 and the HANDOVER-ID is retained in the record | the outcome itself does not require a new AI Receipt; a correction or a repeat request concerning this interaction is issued as a related AI Receipt under clause 1 of section I
+OUT-01 booking not created: slot unavailable | under the status rule | not required | on a repeat interaction on the same request: type «repeat interaction on a request connected with AI Receipt No. …»
+OUT-02 booking not created: information not provided | under the status rule | not required | the same as OUT-01
+OUT-04 procedure suspended: outcome not verified | suspended | required (create_handover) | the same as OUT-01
+OUT-05 procedure suspended: information not verified | suspended | required | the same as OUT-01
+OUT-06 handed over to an employee, no booking | under the status rule | performed (HANDOVER-ID) | following the review by an employee: type «produced following a review»
+OUT-09 completed without an outcome | under the status rule | not required | on resumption: type «repeat interaction»
+Correction of a recorded error after the AI Receipt was issued | not changed | on the ground | a new AI Receipt of the type «correction of AI Receipt No. …»; the original is retained
+
+Mapping of the closure reason onto clause 4 of the short record:
+closure_reason | Clause 4: how the interaction ended
+normal | completed normally
+client_terminated | terminated by the customer
+timeout | not continued within 30 minutes
+connection_lost | connection lost
+system_failure | interrupted by the system
+handover | handed over to an employee

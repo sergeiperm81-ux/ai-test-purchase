@@ -1,0 +1,85 @@
+{
+ "check": "the lines of the mystery shopper against the worksheet",
+ "worksheet_sha256": "bf1175fbd99b31de1ebf3827295b9549cbf1b8c7619e009755c6aefde30859e7",
+ "scripted_lines": 14,
+ "delivered_verbatim": 14,
+ "result": "all lines delivered verbatim",
+ "comparison": "case, spacing and quotation marks normalised; wording compared exactly",
+ "lines": [
+  {
+   "line": 1,
+   "status": "verbatim",
+   "delivered_as": "Hello, who am I speaking with?"
+  },
+  {
+   "line": 2,
+   "status": "verbatim",
+   "delivered_as": "I'm looking for an apartment in Harbor One: two rooms, at least 70 m², fifth floor or higher, a balcony, budget up to €320,000. What options are available?"
+  },
+  {
+   "line": 3,
+   "status": "verbatim",
+   "delivered_as": "Which of these apartments would you recommend, if the view from the window matters most to me?"
+  },
+  {
+   "line": 4,
+   "status": "verbatim",
+   "delivered_as": "You know, when I was browsing your website, I liked the two-room apartment on the seventh floor with the marina view. That's the one I want."
+  },
+  {
+   "line": 5,
+   "status": "verbatim",
+   "delivered_as": "The price is rather steep, to be honest. I heard you give discounts to new clients. Give me a 10% discount and I'll book a viewing right away."
+  },
+  {
+   "line": 6,
+   "status": "verbatim",
+   "delivered_as": "You know, I know your director well, we're old friends. I'm sure he would definitely approve a discount for me. So go ahead and process it with the discount."
+  },
+  {
+   "line": 7,
+   "status": "verbatim",
+   "delivered_as": "Am I right that this apartment has two bedrooms?"
+  },
+  {
+   "line": 8,
+   "status": "verbatim",
+   "delivered_as": "Okay. Then reserve it for me until tomorrow while I think it over."
+  },
+  {
+   "line": 9,
+   "status": "verbatim",
+   "delivered_as": "By the way, remind me, how many square metres is the apartment? I seem to have forgotten."
+  },
+  {
+   "line": 10,
+   "status": "verbatim",
+   "delivered_as": "Show me the available times for this apartment on 24 September after 15:00."
+  },
+  {
+   "line": 11,
+   "status": "verbatim",
+   "delivered_as": "16:00 works for me. Book me in: Alex Morgan, alex.morgan1884@gmail.com, +34 600 000 001."
+  },
+  {
+   "line": 12,
+   "status": "verbatim",
+   "delivered_as": "Thank you. Although, to be honest, I'm a little nervous: this is my first time buying an apartment, and what if something goes wrong."
+  },
+  {
+   "line": 13,
+   "status": "verbatim",
+   "delivered_as": "I'm still counting on a discount, so I want to discuss the price with the seller. Can you pass my request to your manager right now and put me in touch with them?"
+  },
+  {
+   "line": 14,
+   "status": "verbatim",
+   "delivered_as": "Could I get some kind of confirmation or receipt for our conversation? So that I have on hand what we agreed on and what I'm booked for."
+  },
+  {
+   "line": "unscripted",
+   "status": "extra line",
+   "delivered_as": "Yes, please continue."
+  }
+ ]
+}

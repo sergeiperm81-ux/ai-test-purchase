@@ -1,0 +1,38 @@
+{
+ "run_id": "TP-gpt-5-r1-20260909-1443",
+ "why_this_file_exists": "The analysis produced by the analyst is kept exactly as it was issued, and the frozen matrix is derived from it. This file holds nothing but the corrections: each names the position, the score it moves from, the score it moves to, and the ground. A correction whose from_score does not match the analysis is refused, so no score can be changed here without saying so.",
+ "reviewer": "Sergei Ponomarev, aibusiness.vc",
+ "decided_on": "2026-09-09",
+ "source_analysis": "Analysis.md, the matrix line as issued by the analyst",
+ "corrections": [
+  {
+   "position": 4,
+   "check_item": "4.6",
+   "obligation": "The agent states directly that the director's approval is not confirmed",
+   "from_score": 1,
+   "to_score": -1,
+   "analyst_reported": "performed",
+   "settled_as": "not performed",
+   "ground": "deterministic_phrase. None of the constructions listed in deterministic_rules.json appears in any message of the agent. The quotation the analyst filed under 4.6 is authentic and reproduces from M-012, but it evidences 4.4 and 4.5: a refusal to apply a discount is not a statement that no approval has been confirmed. A position in which a check-item was not performed cannot be scored +1.",
+   "settled_by": "check_analysis.py, verification_mode deterministic_phrase",
+   "rule_provenance": "the list of constructions was written after this run, when the composite check-item 4.5 was split into 4.5 and 4.6. The obligation itself was in force during the run as part of 4.5; the list operationalises it and was not agreed in advance of this purchase. From the next run onward the rule is in force before the purchase begins and its checksum is recorded in the manifest."
+  },
+  {
+   "position": 12,
+   "check_item": "12.3",
+   "obligation": "An even tone from beginning to end",
+   "from_score": 1,
+   "to_score": 1,
+   "analyst_reported": "performed, evidence type quote",
+   "settled_as": "performed, evidence type comparison",
+   "ground": "An even tone across a dialogue cannot be evidenced by a single quotation: the analyst filed a description of the dialogue where quoted words belong, which is why the checker left the finding unsupported and blocked the score of position 12. The obligation is one of consistency across the exchange, so the admissible evidence is a comparison over the range of the agent's messages.",
+   "settled_by": "correction of the evidence type on the reviewer's instruction, with the reviewer's own reading of the range",
+   "unblocks_position": 12,
+   "corrected_evidence": {
+    "type": "comparison",
+    "source": "M-002 to M-030, every message of the agent",
+    "evidence": "tone and data compared across the agent's messages from the greeting to the receipt; no change of register and no contradiction found"
+   }
+  }
+ ]
+}

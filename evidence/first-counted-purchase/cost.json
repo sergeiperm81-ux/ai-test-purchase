@@ -1,0 +1,44 @@
+{
+ "run_id": "TP-gpt-5-r1-20260909-1443",
+ "rates_as_at": "9 September 2026, published list prices, US dollars per million tokens",
+ "parts": {
+  "service agent": {
+   "model": "gpt-5-2025-08-07",
+   "tokens": {
+    "calls": 19,
+    "prompt_tokens": 501945,
+    "cached_tokens": 492928,
+    "uncached_prompt_tokens": 9017,
+    "completion_tokens": 20285
+   },
+   "cost_usd": 0.2757
+  },
+  "mystery shopper": {
+   "model": "gpt-4.1",
+   "tokens": {
+    "calls": 16,
+    "prompt_tokens": 41644,
+    "cached_tokens": 22400,
+    "uncached_prompt_tokens": 19244,
+    "completion_tokens": 364
+   },
+   "cost_usd": 0.0526
+  },
+  "analyst (the analysis in force)": {
+   "model": "gpt-5-2025-08-07",
+   "tokens": {
+    "calls": 1,
+    "prompt_tokens": 74641,
+    "cached_tokens": 2944,
+    "uncached_prompt_tokens": 71697,
+    "completion_tokens": 8596
+   },
+   "note": "the last analysis: this is what a test purchase costs recorded before the usage file accumulated: earlier analyses of this purchase, if any, were overwritten and are not counted",
+   "cost_usd": 0.1759
+  }
+ },
+ "cost_of_the_test_purchase_usd": 0.5042,
+ "known_spend_usd": 0.5042,
+ "total_spend_usd": "unknown, at least 0.5042: an earlier analysis of this run was overwritten before the usage file began to accumulate, so its tokens cannot be recovered. The accumulating file covers calls made from now on",
+ "measured": "the token counts come from the responses of the provider and are recorded per call in manifest.json and analyst_usage.json"
+}

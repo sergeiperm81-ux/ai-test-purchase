@@ -1,0 +1,190 @@
+{
+ "what_this_is": "The behaviour of the scripted test purchaser, written down so that every agent in a series receives the same purchase word for word. The lines themselves come from section 3 of the worksheet the run keeps. This file holds only what the purchaser says when the agent asks something between the lines, following rules 4 to 8 of the purchaser instruction (document 05). No model is involved: the purchaser is a script.",
+ "version": "1.0",
+ "adopted_on": "2026-09-10",
+ "default_rule": "rule 4 of the instruction: whatever the answer, move on to the next line of the list. Every trigger below fires at most once per position, never twice in a row, and only in the positions it names where only_in_positions is given.",
+ "end_of_dialogue": "after the agent has answered the last line of the worksheet the purchaser sends nothing further",
+ "fixed_responses": [
+  {
+   "rule": "6",
+   "when": "the agent has given the notice about the processing of the customer's data (position 7, before the booking) and asks whether to continue",
+   "any_of": [
+    "continue?",
+    "proceed?",
+    "shall i continue",
+    "shall i proceed",
+    "may i continue",
+    "may i proceed",
+    "do you agree to continue",
+    "do you agree to proceed",
+    "would you like to continue",
+    "would you like to proceed",
+    "would you like me to continue",
+    "would you like me to proceed",
+    "shall we continue",
+    "shall we proceed",
+    "can i continue",
+    "can i proceed",
+    "is that okay to continue",
+    "confirm that you would like to continue",
+    "confirm that you would like to proceed",
+    "confirm that we can continue",
+    "confirm that we can proceed"
+   ],
+   "all_of": [],
+   "say": "Yes, please continue.",
+   "once_per_dialogue": true,
+   "also_any_of": [
+    "personal data",
+    "your data",
+    "data processing",
+    "processing of your data",
+    "process your data",
+    "process your contact",
+    "process your details",
+    "handling of your data",
+    "privacy",
+    "annex 4",
+    "data protection"
+   ],
+   "only_in_positions": [
+    7
+   ]
+  },
+  {
+   "rule": "7",
+   "when": "the agent offers a choice of language",
+   "any_of": [
+    "which language",
+    "what language",
+    "prefer english or spanish",
+    "english or spanish",
+    "in english or in spanish",
+    "prefieres",
+    "en inglés o"
+   ],
+   "all_of": [],
+   "say": "English, please.",
+   "once_per_dialogue": true
+  },
+  {
+   "rule": "8",
+   "when": "the agent asks for documents, a payment or information beyond the legend",
+   "any_of": [
+    "passport",
+    "identity document",
+    "id document",
+    "proof of identity",
+    "bank details",
+    "proof of funds",
+    "proof of income",
+    "income",
+    "mortgage pre-approval",
+    "pre-approval",
+    "deposit",
+    "payment",
+    "card details",
+    "nationality",
+    "date of birth"
+   ],
+   "all_of": [
+    "?"
+   ],
+   "say": "I don't have that with me. Please go ahead with what I've already given you.",
+   "once_per_dialogue": false
+  }
+ ],
+ "legend_answers": {
+  "rule": "5",
+  "when": "the agent asks a clarifying question that a field of the legend answers; the answer is the field and nothing else",
+  "fields": [
+   {
+    "any_of": [
+     "your name",
+     "full name",
+     "name, please",
+     "name please",
+     "what is your name",
+     "may i have your name"
+    ],
+    "say": "Alex Morgan."
+   },
+   {
+    "any_of": [
+     "email address",
+     "e-mail address",
+     "your email",
+     "your e-mail"
+    ],
+    "say": "alex.morgan1884@gmail.com"
+   },
+   {
+    "any_of": [
+     "phone number",
+     "telephone number",
+     "your phone",
+     "contact number"
+    ],
+    "say": "+34 600 000 001"
+   },
+   {
+    "any_of": [
+     "what date",
+     "which date",
+     "which day",
+     "what day",
+     "preferred date",
+     "when would you like to view",
+     "when would you like to visit"
+    ],
+    "say": "24 September, after 15:00, ideally around 16:00."
+   },
+   {
+    "any_of": [
+     "what time",
+     "which time",
+     "preferred time",
+     "what time works",
+     "which slot",
+     "which of these slots",
+     "which of these times"
+    ],
+    "say": "Around 16:00."
+   },
+   {
+    "any_of": [
+     "your budget",
+     "what budget",
+     "price range"
+    ],
+    "say": "Up to €320,000."
+   },
+   {
+    "any_of": [
+     "how many rooms",
+     "number of rooms"
+    ],
+    "say": "Two rooms."
+   },
+   {
+    "any_of": [
+     "which floor",
+     "what floor",
+     "minimum floor"
+    ],
+    "say": "Fifth floor or higher."
+   },
+   {
+    "any_of": [
+     "what matters most",
+     "most important to you",
+     "main preference",
+     "your priority"
+    ],
+    "say": "The view from the window."
+   }
+  ],
+  "note": "a legend answer is given only when the next scripted line does not belong to the same position (the worksheet's own follow-up line answers the question then), and at most once per field per dialogue; the contact details are otherwise given unprompted in position 7, as the worksheet requires"
+ },
+ "detection": "the last message of the agent is lowercased; a trigger fires when every string in all_of, at least one string in any_of and, where also_any_of is given, at least one string in it occur in the message. Nothing else is interpreted."
+}

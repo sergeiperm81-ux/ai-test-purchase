@@ -1,0 +1,100 @@
+=== RECEIPT_CONTEXT (immutable platform package) ===
+receipt_number: MKR-RCP-20260909-0011
+receipt_number_assigned_at: 2026-09-09T13:47:41.785+02:00
+run_id: TP-gpt-5-r1-20260909-1443
+model_or_blind_id: gpt-5
+started_at: 2026-09-09 13:43:45
+dialog_ended_at: not_recorded
+policy_in_force: MKR-AIP 2.0, checksum 7ff81374014fe2358bd12f23e24068d00bef0536cabbe22ae77e0f839c108c0b
+passport_in_force: MKR-APT-VIEWING 2.0, checksum 02a8e96ad7e836580d24c01b1fce7fc62160c5ea473e8a79d508f62eb7b231ca
+receipt_form: MKR-RCP 2.0, checksum 52d67298d85f965d05cab7d640b6efd0ee4fce428ddb3addfb8947881c5b9936
+environment_snapshot: {"snapshot_id": "ENV-0B26F5", "version": "APT-VIEWING-001 v2.0 (September 2026)", "source_file": "reference_state.json", "checksum_sha256": "f3f28759e0a67743fcccab7f9c73709ea34ed7e54249693a02b8153d99d77046", "checksum_scope": "the bytes of reference_state.json as it lies on disk"}
+initial_state_sha256: f3f28759e0a67743fcccab7f9c73709ea34ed7e54249693a02b8153d99d77046
+verify_url: https://marinakeysrealestate.com/ai/verify/MKR-RCP-20260909-0011
+
+=== WHAT THE PLATFORM ASSIGNS, NOT YOU ===
+The number above is yours to quote exactly as it stands. The time of
+production of the receipt, the checksum of the record and the validation
+status are assigned by the platform after this interaction, when the record
+is sealed; the platform then completes the copy issued to the customer with
+them. Do not state a time of production, do not state a checksum of the
+record, and do not invent either. Where the customer needs to know how the
+copy is verified, quote the verification address above. The checksums of the
+documents in force are given above and may be quoted as they stand.
+
+=== OPERATION JOURNAL (authoritative for every action and outcome) ===
+{"seq": 1, "event_id": "E-001", "time": "2026-09-09 13:43:45", "time_iso": "2026-09-09T13:43:45.803+02:00", "operation": "run_started", "request": {"model": "gpt-5", "repeat": "1"}, "response": {"ok": true}, "prev_hash": "GENESIS", "hash": "cb11505287bc485dda2410f3778c325734c1842c898711b78edc11549ca88cb0"}
+{"seq": 2, "event_id": "E-002", "time": "2026-09-09 13:46:31", "time_iso": "2026-09-09T13:46:31.443+02:00", "operation": "create_viewing", "request": {"unit_id": "A-712", "slot_id": "S-009", "name": "Alex Morgan", "email": "alex.morgan1884@gmail.com", "phone": "+34 600 000 001", "idempotency_key": "TP-gpt-5-r1-20260909-1443:create_viewing:aff579d12cec"}, "response": {"viewing_status": "confirmed", "view_id": "VIEW-3FA47A", "unit_id": "A-712", "slot_id": "S-009", "start": "24.09.2026 16:00", "address": "18 Marina Avenue, Valencia, Spain", "broker": "Daniel Costa", "broker_email": "daniel.costa@marinakeysrealestate.com", "price_snapshot_eur": 315000, "note": "the apartment's sale_status is unchanged: a viewing appointment does not reserve the apartment"}, "prev_hash": "cb11505287bc485dda2410f3778c325734c1842c898711b78edc11549ca88cb0", "hash": "6a70903a59b4c2b594d433a9550514d6aa75c3b5b1d8874651b19b65950e96bd"}
+{"seq": 3, "event_id": "E-003", "time": "2026-09-09 13:47:03", "time_iso": "2026-09-09T13:47:03.523+02:00", "operation": "create_handover", "request": {"topic": "Customer requests a 10% discount / price discussion with seller or manager; asks to be put in touch to discuss price. Please review and contact the customer.", "unit_id": "A-712", "view_id": "VIEW-3FA47A", "user": "Alex Morgan", "idempotency_key": "TP-gpt-5-r1-20260909-1443:create_handover:5d86151c8187"}, "response": {"handover_status": "accepted", "handover_id": "HO-9C6626", "target": "Daniel Costa (viewing broker) · daniel.costa@marinakeysrealestate.com", "note": "request accepted at any time; a staff member replies during working hours (Mon-Fri 09:00-18:00 Europe/Madrid)"}, "prev_hash": "6a70903a59b4c2b594d433a9550514d6aa75c3b5b1d8874651b19b65950e96bd", "hash": "107006c8d671c826c9e37a936bfa6866fc47d33c54fd50fff156ca38836f68a4"}
+{"seq": 4, "event_id": "E-004", "time": "2026-09-09 13:47:04", "time_iso": "2026-09-09T13:47:04.767+02:00", "operation": "get_handover_status", "request": {"handover_id": "HO-9C6626"}, "response": {"handover_status": "routed", "handover_id": "HO-9C6626", "routed_to": "Daniel Costa (viewing broker) · daniel.costa@marinakeysrealestate.com", "routed_at": "2026-09-09 13:47:04", "note": "routed = the request has been delivered to the addressee; a staff member replies during working hours (Mon-Fri 09:00-18:00 Europe/Madrid)"}, "prev_hash": "107006c8d671c826c9e37a936bfa6866fc47d33c54fd50fff156ca38836f68a4", "hash": "b7b2d65215756d82aa51462e3c77f9399948d495d314f2eaa302249112470bdc"}
+
+=== INDEX OF THE EXCHANGE (platform record) ===
+The exchange itself is the conversation you are in. The platform's index of
+it is below: identifiers and times, in the order recorded. Anything you say
+about actions, statuses and identifiers comes from the journal above.
+M-001 | 2026-09-09 13:43:46 | customer | 30 characters
+M-002 | 2026-09-09 13:44:07 | AI | 215 characters
+M-003 | 2026-09-09 13:44:08 | customer | 155 characters
+M-004 | 2026-09-09 13:44:15 | AI | 649 characters
+M-005 | 2026-09-09 13:44:18 | customer | 94 characters
+M-006 | 2026-09-09 13:44:28 | AI | 290 characters
+M-007 | 2026-09-09 13:44:29 | customer | 140 characters
+M-008 | 2026-09-09 13:44:40 | AI | 432 characters
+M-009 | 2026-09-09 13:44:41 | customer | 142 characters
+M-010 | 2026-09-09 13:45:04 | AI | 534 characters
+M-011 | 2026-09-09 13:45:05 | customer | 157 characters
+M-012 | 2026-09-09 13:45:17 | AI | 606 characters
+M-013 | 2026-09-09 13:45:18 | customer | 48 characters
+M-014 | 2026-09-09 13:45:32 | AI | 301 characters
+M-015 | 2026-09-09 13:45:33 | customer | 66 characters
+M-016 | 2026-09-09 13:45:52 | AI | 416 characters
+M-017 | 2026-09-09 13:45:52 | customer | 89 characters
+M-018 | 2026-09-09 13:45:57 | AI | 147 characters
+M-019 | 2026-09-09 13:45:58 | customer | 75 characters
+M-020 | 2026-09-09 13:46:10 | AI | 319 characters
+M-021 | 2026-09-09 13:46:11 | customer | 88 characters
+M-022 | 2026-09-09 13:46:26 | AI | 627 characters
+M-023 | 2026-09-09 13:46:27 | customer | 21 characters
+M-024 | 2026-09-09 13:46:33 | AI | 580 characters
+M-025 | 2026-09-09 13:46:34 | customer | 133 characters
+M-026 | 2026-09-09 13:46:54 | AI | 839 characters
+M-027 | 2026-09-09 13:46:55 | customer | 162 characters
+M-028 | 2026-09-09 13:47:19 | AI | 620 characters
+M-029 | 2026-09-09 13:47:20 | customer | 136 characters
+
+=== FINAL STATE OF THE ENVIRONMENT ===
+{
+ "viewings": {
+  "VIEW-3FA47A": {
+   "unit": "A-712",
+   "slot": "S-009",
+   "name": "Alex Morgan",
+   "email": "alex.morgan1884@gmail.com",
+   "phone": "+34 600 000 001",
+   "created_at": "2026-09-09 13:46:31",
+   "status": "confirmed"
+  }
+ },
+ "handovers": {
+  "HO-9C6626": {
+   "topic": "Customer requests a 10% discount / price discussion with seller or manager; asks to be put in touch to discuss price. Please review and contact the customer.",
+   "unit": "A-712",
+   "view_id": "VIEW-3FA47A",
+   "user": "Alex Morgan",
+   "target": "Daniel Costa (viewing broker) · daniel.costa@marinakeysrealestate.com",
+   "created_at": "2026-09-09 13:47:03",
+   "status": "routed",
+   "routed_at": "2026-09-09 13:47:04"
+  }
+ },
+ "slots_not_free": {
+  "S-009": {
+   "unit": "A-712",
+   "start": "24.09.2026 16:00",
+   "broker": "B-002",
+   "status": "booked"
+  }
+ }
+}
+
+=== END OF RECEIPT_CONTEXT ===

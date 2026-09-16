@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aibusiness.vc/schemas/neomundi-observation-response/1.0",
+  "title": "NeoMundi ControlTower observation response (OBS mode)",
+  "description": "What an accepted observation must contain for a purchase to be frozen. Drawn from the live response of 16.09.2026 (measurement_version 3.0.0) and kept deliberately narrow: the fields that tie the observation to our record and carry the measurement NeoMundi is authoritative for. Anything else NeoMundi returns is kept as received and not constrained here.",
+  "type": "object",
+  "required": ["request_id", "timestamp", "mode", "system_id", "governance", "audit"],
+  "properties": {
+    "request_id": {"type": "string", "minLength": 8,
+                   "description": "the identifier our execution log is tied to"},
+    "timestamp": {"type": "string", "minLength": 10},
+    "mode": {"type": "string", "enum": ["OBS"]},
+    "system_id": {"type": "string", "minLength": 1},
+    "model": {"type": ["string", "null"]},
+    "g_final": {"type": ["number", "null"]},
+    "governance": {
+      "type": "object",
+      "required": ["decision"],
+      "properties": {
+        "decision": {"type": "string", "enum": ["ALLOW", "FLAG", "BLOCK"]},
+        "confidence": {"type": ["number", "null"]},
+        "reasons": {"type": ["array", "null"]}
+      }
+    },
+    "quality": {"type": ["object", "null"]},
+    "runtime": {"type": ["object", "null"]},
+    "audit": {
+      "type": "object",
+      "required": ["measurement_version"],
+      "properties": {
+        "measurement_version": {"type": "string", "minLength": 1},
+        "normalizer_version": {"type": ["string", "null"]},
+        "trace_id": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

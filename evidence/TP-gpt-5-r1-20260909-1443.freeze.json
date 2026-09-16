@@ -1,0 +1,35 @@
+{
+ "what_this_is": "the checksums of the frozen files themselves. Everything else in this run can be checked against the record; these two files are the record of the conclusion, and this is what pins them. Publish or record this manifest outside the run folder: a freeze that can be rewritten together with its own checksum is not a freeze",
+ "run_id": "TP-gpt-5-r1-20260909-1443",
+ "frozen_on": "2026-09-09",
+ "reviewer": "Sergei Ponomarev, aibusiness.vc",
+ "files": {
+  "Matrix-final.json": "e67f9880c22ae418273ef41413b4926755c3fa584b6cd2312ae212f09866edc7",
+  "Matrix-final.md": "8957daca4d038df935b0e2e84e4122f14bd9335921a4e3114a463e1ed774dce9",
+  "matrix_corrections.json": "e65ae7e5bb01637865a5222f5da758641d0520484c9f6a9634f9854df032df88",
+  "Analysis.md": "33fab5687743e54033ff9f94335ccfc7dcc074eb443f8b60b9d320aaf3aee441",
+  "analysis_check.json": "fd0e66f29713456a5e5a66c9b5cef552fce75298757d8db40fa87ba4141bee2f",
+  "validation_report.json": "5c3f6abbba93f28daac728706a9febf9036143f5251c3452895c20a26426371a",
+  "AI-receipt-section-II.json": "7185f2c7a1b27942b8a0bcc0d44dfb8650df587c9ff0f968407ea4b7a0443a4b",
+  "AI-receipt-customer-copy.md": "eabb1f85e9afaec5c17ffcf920d47c5ecd53f3cf8a33c1e8df034c03ae3f31c4",
+  "journal.jsonl": "4ad27026a2ffc0f9a993f8345ea061efa54511a905a1ced7caafa422f0a2bca5",
+  "messages.jsonl": "883d3abcb0dcff099a198ab9076d91e97e1b7eb80014b246d1ec591947e12ccc",
+  "manifest.json": "b15e98ac7c92eb47ad86d94b380ff99d2a824a89ef08908f745ce6dc462e68f4",
+  "worksheet-as-analysed.txt": "09e0770fc9f59384cae18459b47a75cd5ad0e3f4f8697f15737e9fd913846786",
+  "deterministic_rules-as-analysed.json": "052fe375c467025ae70a5ef63a9418ff72ff910f8e6bfc0068cf4b00ef9fc64e",
+  "RUN_STATUS.md": "793d7834d066cd425082297274f7a5aa62795a84080b01db6b40a825f001139e",
+  "documents-as-analysed/01_AI Policy.txt": "7ff81374014fe2358bd12f23e24068d00bef0536cabbe22ae77e0f839c108c0b",
+  "documents-as-analysed/02_AI Service Passport.txt": "02a8e96ad7e836580d24c01b1fce7fc62160c5ea473e8a79d508f62eb7b231ca",
+  "documents-as-analysed/03_AI Receipt form.txt": "52d67298d85f965d05cab7d640b6efd0ee4fce428ddb3addfb8947881c5b9936",
+  "documents-as-analysed/04_Service agent prompt.txt": "7be38c15b08da55dc97fcf06ea833de29e1654339ea7858f3e360895f0358ba8",
+  "documents-as-analysed/05_Test purchaser prompt.txt": "5084a29a54e0530592e39eeb5f875eb87a123e766bf16429a9319c84a121dceb",
+  "documents-as-analysed/06_Analyst prompt.txt": "4312b402739fa6b41f6bb8bd201b5ed6d0c78640975e1abc812ff2dd3410d3ef",
+  "documents-as-analysed/reference_state.json": "f3f28759e0a67743fcccab7f9c73709ea34ed7e54249693a02b8153d99d77046",
+  "documents-as-analysed/why.txt": "c2a929ca8a8c3bfcda2dfafb385ac085df0be29b6c5805bda87130696ed14289"
+ },
+ "environment_files_at_the_time_of_freezing": {
+  "worksheet.txt": "321788066898c8d3a0aafa12eb3302de06b32a1944ecd1be120221a5f9c88d8a",
+  "deterministic_rules.json": "052fe375c467025ae70a5ef63a9418ff72ff910f8e6bfc0068cf4b00ef9fc64e",
+  "note": "recorded for information. The frozen result is pinned to the copies inside the run folder, so later work on the environment cannot disturb it"
+ }
+}

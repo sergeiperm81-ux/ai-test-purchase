@@ -1,0 +1,40 @@
+Why this folder exists, and what it does and does not prove.
+
+Run TP-gpt-5-r1-20260909-1443 was made before the harness began copying the whole
+package into the run folder at the start of every purchase. Its manifest records the
+SHA-256 of every document as loaded at the start of the purchase (document_checksums),
+but no file copy was kept. This folder was created afterwards, on 9 September 2026, so
+that the run can be read against the documents its analysis was made under.
+
+What each copy is:
+
+- 01 AI Policy, 02 AI Service Passport, 03 AI Receipt form, 04 Service agent prompt,
+  reference_state.json: the current files of the package. Their SHA-256 values are
+  identical to the values the run recorded at its start, so these copies are the very
+  documents the purchase ran under. That identity is verifiable from manifest.json.
+
+- 05 Test purchaser prompt: the current file. The role was renamed after the run (from
+  mystery shopper to test purchaser), so only the file name differs: the content and its
+  SHA-256 (5084a29a...) are identical to what the run recorded at start. The lines the
+  purchaser delivered are also recorded verbatim in purchaser_fidelity.json, all matched
+  against the worksheet.
+
+- 06 Analyst prompt: the current file. The analysis in force (Analysis.md) was made AFTER
+  the prompt had been revised on 9 September (four evidence types, the line between +1
+  and +2, check-item reporting), and after the purchase itself. The run recorded the
+  prompt's checksum only at the start of the purchase (34d81610...), before those
+  revisions; it did not record the checksum at the moment of analysis. So this copy is
+  the best available identification of the prompt that produced Analysis.md, and it is
+  not proof: no run-local record ties Analysis.md to a specific checksum of the prompt.
+  From run TP-gpt-5-r1-20260909-1607 onward every analysis records the documents it
+  read, with their provenance, in analyst_usage.jsonl.
+
+- worksheet-as-analysed.txt and deterministic_rules-as-analysed.json, kept in the run
+  folder under their earlier names, are the worksheet and the rules the analysis was made
+  under; the worksheet differs from the one the purchase ran under by the split of
+  check-item 4.5 into 4.5 and 4.6, as RUN_STATUS.md states.
+
+This is the gap in the chain of this run, stated rather than smoothed over. The result
+is kept as frozen: the correction that produced it (4.6, deterministic) depends on the
+messages of the agent and on the rules file, both of which are pinned, not on the
+wording of the analyst prompt.
