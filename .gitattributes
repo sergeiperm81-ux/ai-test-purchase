@@ -1,0 +1,8 @@
+# Every text file is stored and checked out with LF on every platform.
+* text=auto eol=lf
+*.docx binary
+*.xlsx binary
+
+# The evidence is pinned by SHA-256 of its exact bytes. Nothing in it may be converted on
+# checkout, or the checksums stop reproducing. This line comes last so that it wins.
+evidence/** -text

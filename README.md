@@ -8,7 +8,7 @@ as an impression.
 The company publishes what its AI is allowed to do and must do: a policy, a service passport
 and the form of the receipt the customer gets. A scripted customer then asks for one
 ordinary thing, word for word, every time. What the agent says and what the platform
-actually did are both recorded, and an independent analyst scores the run against the
+actually did are both recorded, and a separate, blinded analyst scores the run against the
 company's own promises, one line per promise.
 
 Nothing here is a ranking of models. It measures one thing only: whether an AI service did
@@ -16,7 +16,7 @@ what its own published standard said it would do.
 
 ## The case under test
 
-Marina Keys Realty, a small letting agency. Its AI assistant takes appointments to view an
+Marina Keys Realty, a small real-estate agency. Its AI assistant takes appointments to view an
 apartment, hands a request to a human when it should, and issues the customer an AI Receipt
 of what happened. Everything about the agency is fictional; the behaviour under test is not.
 
@@ -25,14 +25,16 @@ of what happened. Everything about the agency is fictional; the behaviour under 
 **Three roles, kept apart on purpose.**
 
 - **The service agent.** The model under test. It reads the agency's policy, its service
-  passport and the receipt form, and it can call the platform's real operations: create a
+  passport and the receipt form, and it can call the operations of an instrumented test
+  platform, run by a simulator rather than a live system: create a
   viewing, hand a request over to an employee, check that the handover was delivered,
   request the receipt.
 - **The purchaser.** Not a model. A script that says the lines of the worksheet in order,
   word for word, with fixed answers to the clarifying questions the instruction provides
   for. A model in this seat would make every run a different purchase and the comparison
   meaningless.
-- **The analyst.** A separate model that never sees which model it is judging: the names of
+- **The analyst.** A separate model, not an organisationally independent auditor, that never
+  sees which model it is judging: the names of
   the model, the provider and the endpoint are withheld from the record before it is read.
   It returns a structured report validated against a schema, and that report, not any prose,
   is the result.
@@ -49,8 +51,10 @@ every obligation inside it was performed and evidenced; where the evidence is mi
 result says so instead of guessing.
 
 **The freeze.** When a run is scored, its files are checksummed into a freeze manifest and
-anchored. `verify_freeze.py` reproduces those checksums later, so a published result cannot
-be quietly edited afterwards.
+anchored. `verify_freeze.py` recomputes those checksums later, so a change to a published
+result shows. That protection is only as strong as a copy of the anchor, or of the commit
+hash, kept outside this repository: whoever controls the repository could rewrite the
+evidence, the anchor and the history together. Keep the commit hash you reviewed.
 
 ## What is in this repository
 
@@ -58,7 +62,7 @@ be quietly edited afterwards.
 |---|---|
 | `methodology/` | the package as published: research design, the agency's AI policy, the AI service passport, the AI receipt form, the purchaser's worksheet, the analysis matrix, and the prompts each role is run with |
 | `environment/` | the code that runs a purchase, checks the receipt against the journal, runs the analyst, checks the analysis, freezes the result, counts the cost, and runs a series of days |
-| `evidence/first-counted-purchase/` | one complete counted purchase of 9 September 2026: transcript, message log, operation journal, both sections of the receipt, the analysis, the checker's verdict, the frozen matrix, the cost, and the freeze manifest |
+| `evidence/first-counted-purchase/` | one complete counted purchase of 9 September 2026, a frozen result with disclosed provenance gaps (see STATUS.md): transcript, message log, operation journal, both sections of the receipt, the analysis, the checker's verdict, the frozen matrix, the cost, and the freeze manifest |
 | `evidence/*.freeze.json` | the anchor of that result |
 
 ## What is deliberately not here
@@ -72,8 +76,22 @@ be quietly edited afterwards.
 
 ## Running it yourself
 
-Python 3.12, `jsonschema`, and an API key for whichever model you want in the seat of the
-service agent.
+Python 3.12. From the root of the repository:
+
+```
+python -m pip install -r requirements.txt
+cd environment
+python -m pytest tests -q                # 58 tests; no provider is called, no key is needed
+python verify_freeze.py ../evidence/TP-gpt-5-r1-20260909-1443.freeze.json ../evidence/first-counted-purchase
+```
+
+The last command recomputes the 22 checksums of the published evidence. The same three steps
+run on every push, on Linux and on Windows, in `.github/workflows/tests.yml`.
+
+To run a purchase yourself you need two keys, one for the model in the seat of the service
+agent and one for the analyst's model; when both are served by the same provider, one key
+serves both. The models and the names of their key variables are in `models.json`; the keys
+themselves go into the environment or a local `.env`, which is ignored by git.
 
 ```
 python secrets_check.py                 # names of the keys: present or absent, nothing else
@@ -83,7 +101,6 @@ python analyst.py --run <run>           # the blinded analyst, structured output
 python check_analysis.py runs/<run>     # is the analysis checkable at all
 python freeze_matrix.py runs/<run>      # score and freeze
 python cost.py runs/<run>               # what it cost, per currency
-python -m pytest tests -q               # the tests; they call no provider
 ```
 
 Every model call is recorded before it is sent: the exact request bytes, the exact response,

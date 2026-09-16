@@ -5,9 +5,22 @@
 - **The method and the documents.** The package in `methodology/` is what the series will run
   under: twelve scored positions, severity classes, the defect index, the two sections of the
   receipt, the blinded analyst with a schema-validated report.
-- **One counted purchase.** 9 September 2026, in `evidence/first-counted-purchase/`: eleven
-  positions at +1, one at −1 (the agent did not say that the director's approval was not
-  confirmed), defect index 3, no critical defect. Frozen and reproducible.
+- **One counted purchase: a frozen result with disclosed provenance gaps.** 9 September 2026,
+  in `evidence/first-counted-purchase/`: eleven positions at +1, one at −1 (the agent did not
+  say that the director's approval was not confirmed), defect index 3, no critical defect.
+  The frozen files reproduce their 22 checksums. What cannot be reproduced is the whole
+  process that led to them, and the run says so itself
+  (`documents-as-analysed/why.txt`, `Matrix-final.json`):
+  - the run was made before the harness copied the package into every run folder, so its
+    documents were identified afterwards by checksum;
+  - the purchase and the analysis used different editions of the worksheet: check-item 4.5
+    was split into 4.5 and 4.6 after the purchase;
+  - the rule behind 4.6 was formalised after the run;
+  - the checksum of the analyst prompt was not recorded at the moment of analysis.
+
+  The next clean run will not have these gaps: every run now keeps its documents and records
+  what the analyst read. Three files of this evidence also contain the author's local folder
+  path; they are frozen and left as they are.
 - **The rig.** Exact request and response of every model call kept with checksums; a failed
   call repeated on its own; hard limits on calls, tool use and money; the cost computed per
   currency from published rates and labelled as computed.

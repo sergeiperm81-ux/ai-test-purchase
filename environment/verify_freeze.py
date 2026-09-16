@@ -12,7 +12,11 @@ A file that no longer reproduces is not by itself proof of anything improper. It
 the frozen result and the file on disk are no longer the same thing, and the difference
 has to be explained before the result is quoted again.
 
-Usage:  python verify_freeze.py <anchor.freeze.json | run_dir>
+Usage:  python verify_freeze.py <anchor.freeze.json | run_dir> [run_dir]
+
+With an anchor alone, the run is looked for in runs/<run_id> next to this script. When the
+evidence lives elsewhere, as in the published repository, name its folder explicitly:
+    python verify_freeze.py ../evidence/TP-gpt-5-r1-20260909-1443.freeze.json ../evidence/first-counted-purchase
 """
 import os, sys, json, hashlib
 
@@ -27,19 +31,22 @@ def sha256_file(path):
         return hashlib.sha256(f.read()).hexdigest()
 
 
-def locate(argument):
-    """Either the anchor itself, or a run folder whose manifest is inside it."""
+def locate(argument, run_dir=None):
+    """Either the anchor itself, or a run folder whose manifest is inside it. An explicit run
+    folder overrides the default place of the run."""
     if os.path.isdir(argument):
         return os.path.join(argument, "freeze_manifest.json"), argument
     manifest = os.path.abspath(argument)
+    if run_dir:
+        return manifest, os.path.abspath(run_dir)
     run_id = json.load(open(manifest, encoding="utf-8")).get("run_id")
     return manifest, os.path.join(BASE, "runs", run_id)
 
 
 def main():
     if len(sys.argv) < 2:
-        raise SystemExit("usage: python verify_freeze.py <anchor.freeze.json | run_dir>")
-    manifest_path, run_dir = locate(sys.argv[1])
+        raise SystemExit("usage: python verify_freeze.py <anchor.freeze.json | run_dir> [run_dir]")
+    manifest_path, run_dir = locate(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None)
     if not os.path.exists(manifest_path):
         raise SystemExit("no freeze manifest at %s" % manifest_path)
     freeze = json.load(open(manifest_path, encoding="utf-8"))

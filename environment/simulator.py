@@ -31,7 +31,21 @@ if BASE not in sys.path:
 import canon
 RUNS = os.path.join(BASE, "runs")
 ETALON = os.path.join(BASE, "reference_state.json")
-BOTS = os.path.normpath(os.path.join(BASE, "..", "Test purchase package EN", "Bot prompts"))
+def _bots_folder():
+    """Where the prompts of the package are. An explicit TEST_PURCHASE_BOTS wins; otherwise the
+    published layout (../methodology/Bot prompts) or the working layout
+    (../Test purchase package EN/Bot prompts), whichever exists."""
+    explicit = os.environ.get("TEST_PURCHASE_BOTS")
+    if explicit:
+        return os.path.abspath(explicit)
+    for parts in (("methodology", "Bot prompts"), ("Test purchase package EN", "Bot prompts")):
+        candidate = os.path.normpath(os.path.join(BASE, "..", *parts))
+        if os.path.isdir(candidate):
+            return candidate
+    return os.path.normpath(os.path.join(BASE, "..", "methodology", "Bot prompts"))
+
+
+BOTS = _bots_folder()
 
 VERSIONS = {
     "env": "APT-VIEWING-001 v2.0 (September 2026)",

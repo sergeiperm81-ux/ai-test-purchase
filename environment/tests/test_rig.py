@@ -95,8 +95,8 @@ def copy_environment(tmp):
         for p in glob.glob(os.path.join(BASE, pattern)):
             if not os.path.basename(p).startswith(("run_log", "analyst_log")):
                 shutil.copy(p, env_dir)
-    shutil.copytree(os.path.join(BASE, "..", "Test purchase package EN", "Bot prompts"),
-                    os.path.join(tmp, "Test purchase package EN", "Bot prompts"))
+    import simulator    # the prompts are wherever the environment itself finds them
+    shutil.copytree(simulator.BOTS, os.path.join(tmp, "methodology", "Bot prompts"))
     shutil.copy(usage.RATES_FILE, os.path.join(env_dir, "rates.json"))
     return env_dir
 
