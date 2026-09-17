@@ -1,6 +1,6 @@
 {
  "what_this_is": "The configurations of the series and how each is reached: configuration_id, provider, endpoint, protocol, the NAME of the environment variable holding its key, the rate_key it is priced by, the output limit and the model ids the provider is expected to report. Keys never appear here. The list is fixed at the plan of the series; series.py refuses any configuration, the analyst's included, whose observed model ids are not pinned.",
- "version": "1.0-rc5, 17.09.2026: analyst moved to gpt-5.4-mini-2026-03-17 (reasoning_effort none); its observed model id is not pinned yet",
+ "version": "1.0-rc6, 17.09.2026: all nine configurations pinned from setup checks; analyst gpt-5.4-mini-2026-03-17 with reasoning off",
  "pilot": {
   "pilot_id": "NEOMUNDI-AIBUSINESS-TP-2026",
   "scenario_id": "MARINA-KEYS-VIEWING-2026-09"
@@ -193,8 +193,10 @@
    "max_tokens_param": "max_completion_tokens",
    "reasoning_effort": "none",
    "note": "the analyst. Replaces gpt-5-mini-2025-08-07, which OpenAI lists as deprecated (notice of 11 June 2026, shutdown 11 December 2026: https://developers.openai.com/api/docs/deprecations, section 2026-06-11). reasoning_effort none is set explicitly so that no output tokens go to hidden reasoning and the cost stays predictable",
-   "expected_observed_models": null,
-   "observed_models_provenance": "not yet observed: one setup call of the analyst is still to be made"
+   "expected_observed_models": [
+    "gpt-5.4-mini-2026-03-17"
+   ],
+   "observed_models_provenance": "reported by the provider in the setup check SMOKE-ANALYST-20260917-54MINI (one recorded call, calls/calls.jsonl of that run; the answer was the JSON asked for, 11 output tokens, 0 reasoning tokens)"
   }
  ],
  "roles": {
