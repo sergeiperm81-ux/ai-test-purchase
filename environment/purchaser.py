@@ -111,6 +111,11 @@ class ScriptedPurchaser:
                              "why": "scripted line"})
         return line
 
+    def finished(self):
+        """True once every scripted line has been said. The dialogue ends when the agent has
+        answered the last of them; nothing the agent asks afterwards is answered."""
+        return self.i >= len(self.script)
+
     def fixed_texts(self):
         out = [r["say"] for r in self.rules.get("fixed_responses", [])]
         out += [f["say"] for f in self.rules.get("legend_answers", {}).get("fields", [])]

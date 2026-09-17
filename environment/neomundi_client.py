@@ -55,39 +55,83 @@ def request_ledger_path():
         os.path.join(BASE, "ledger", "neomundi_requests.jsonl")
 
 
-def requests_made(scope=None, run_id=None):
-    """Outgoing NeoMundi requests recorded so far, every kind and every outcome."""
+def requests_made(scope=None, run_id=None, kind=None):
+    """Outgoing NeoMundi requests recorded so far, every outcome; every kind unless one is
+    named (observation or contract)."""
     n = 0
     for r in call_log._read_jsonl(request_ledger_path()):
         if scope is not None and r.get("scope") != scope:
             continue
         if run_id is not None and r.get("run_id") != run_id:
             continue
+        if kind is not None and r.get("kind") != kind:
+            continue
         n += 1
     return n
 
 
+CAPS = {"observation": ("max_observations_per_scope", "max_observations_per_purchase"),
+        "contract": ("max_contracts_per_scope", "max_contracts_per_purchase")}
+
+
 def reserve_request(run_dir, cfg, attempt_id, kind):
-    """Counts one outgoing request against the caps of the budget scope and of the purchase,
-    atomically and before it is sent. Every POST counts, observations and contracts alike,
-    whatever NeoMundi answers: what is capped is what leaves, not what succeeds. Without a
-    cap in the configuration nothing is sent. Returns (allowed, detail)."""
-    cap_scope, cap_run = cfg.get("max_requests_per_scope"), cfg.get("max_requests_per_purchase")
+    """Counts one outgoing request of its kind against the caps of the budget scope and of
+    the purchase, atomically and before it is sent. Observations (paid) and contract
+    retrievals (free, as seen in the portal) have separate caps. Every POST counts whatever
+    NeoMundi answers: what is capped is what leaves, not what succeeds. Without a cap in the
+    configuration nothing is sent. Returns (allowed, detail)."""
+    scope_key, run_key = CAPS[kind]
+    cap_scope, cap_run = cfg.get(scope_key), cfg.get(run_key)
     if not isinstance(cap_scope, int) or not isinstance(cap_run, int):
-        return False, "the NeoMundi configuration sets no request caps: nothing is sent"
+        return False, "the NeoMundi configuration sets no %s caps: nothing is sent" % kind
     scope, run_id = call_log.budget_scope(), os.path.basename(os.path.abspath(run_dir))
     path = request_ledger_path()
     with call_log.LedgerLock(path):
-        rows = call_log._read_jsonl(path)
+        rows = [r for r in call_log._read_jsonl(path) if r.get("kind") == kind]
         in_scope = sum(1 for r in rows if r.get("scope") == scope)
         in_run = sum(1 for r in rows if r.get("run_id") == run_id)
         if in_scope >= cap_scope:
-            return False, "the cap of %d NeoMundi requests for scope %s is reached" % (cap_scope, scope)
+            return False, "the cap of %d NeoMundi %ss for scope %s is reached" % (cap_scope, kind, scope)
         if in_run >= cap_run:
-            return False, "the cap of %d NeoMundi requests for this purchase is reached" % cap_run
+            return False, "the cap of %d NeoMundi %ss for this purchase is reached" % (cap_run, kind)
         call_log._append_jsonl(path, {"at_utc": call_log.utc_iso(), "scope": scope, "run_id": run_id,
                                       "provider_attempt_id": attempt_id, "kind": kind})
-    return True, {"scope_requests": in_scope + 1, "purchase_requests": in_run + 1}
+    return True, {"scope_%ss" % kind: in_scope + 1, "purchase_%ss" % kind: in_run + 1}
+
+
+# ---------------------------------------------------------------- the circuit breaker
+
+def breaker_path(scope=None):
+    return "%s.breaker.%s.json" % (request_ledger_path(), scope or call_log.budget_scope())
+
+
+def breaker_open(scope=None):
+    """The reason the breaker of this scope is open, or None. It opens on the first refusal
+    NeoMundi cannot be expected to withdraw (an oversize body, a 4xx that is not a rate
+    limit): from then on nothing is sent in the scope until an operator resets it, because
+    every further request would be refused for the same reason and the round would spend
+    its money on purchases that cannot be measured."""
+    p = breaker_path(scope)
+    return fsio.read_json(p) if os.path.exists(p) else None
+
+
+def open_breaker(run_dir, reason, scope=None):
+    p = breaker_path(scope)
+    if not os.path.exists(p):
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8", newline="") as f:
+            json.dump({"scope": scope or call_log.budget_scope(), "opened_at_utc": call_log.utc_iso(),
+                       "run_id": os.path.basename(os.path.abspath(run_dir)), "reason": reason,
+                       "how_to_reset": "python neomundi_client.py breaker --reset, after the cause is settled"},
+                      f, ensure_ascii=False, indent=1)
+
+
+def reset_breaker(scope=None):
+    p = breaker_path(scope)
+    if os.path.exists(p):
+        os.remove(p)
+        return True
+    return False
 
 
 def _folder(run_dir):
@@ -216,11 +260,38 @@ def _send(run_dir, attempt_id, request_bytes, cfg, hashes):
     key = _key_of(run_dir, cfg, attempt_id, hashes)
     if key is None:
         return "pending"
+    # the size limit NeoMundi enforces on llm_prompt is checked here, before anything
+    # leaves, on every send and every flush: an oversize body is refused deterministically,
+    # so it is not sent, and the breaker opens because every body of a purchase is about
+    # as long as this one. The context is never cut down here to fit: what to send instead
+    # is agreed with NeoMundi and comes as a new configuration
+    opened = breaker_open()
+    if opened:
+        call_log._append_jsonl(_links_path(run_dir), dict(hashes, **{
+            "provider_attempt_id": attempt_id, "status": "circuit_open", "at_utc": call_log.utc_iso(),
+            "error": "the NeoMundi breaker of this scope is open: %s" % opened.get("reason")}))
+        return "circuit_open"
+    limit = cfg.get("max_prompt_chars")
+    size = len(json.loads(request_bytes).get("llm_prompt") or "")
+    if not isinstance(limit, int) or size > limit:
+        why = ("no max_prompt_chars in the NeoMundi configuration" if not isinstance(limit, int)
+               else "llm_prompt is %d characters, the limit is %d" % (size, limit))
+        call_log._append_jsonl(_links_path(run_dir), dict(hashes, **{
+            "provider_attempt_id": attempt_id, "status": "oversize",
+            "at_utc": call_log.utc_iso(), "llm_prompt_chars": size, "error": why}))
+        open_breaker(run_dir, "oversize on %s: %s" % (attempt_id, why))
+        return "oversize"
     tries = int(cfg.get("max_attempts", 3))
     scale = float(os.environ.get("TEST_PURCHASE_RETRY_SCALE", "1"))
     n_prev = sum(1 for l in links(run_dir) if l["provider_attempt_id"] == attempt_id and l.get("try"))
     for t in range(1, tries + 1):
         n = n_prev + t
+        opened = breaker_open()
+        if opened:
+            call_log._append_jsonl(_links_path(run_dir), dict(hashes, **{
+                "provider_attempt_id": attempt_id, "status": "circuit_open", "at_utc": call_log.utc_iso(),
+                "error": "the NeoMundi breaker of this scope is open: %s" % opened.get("reason")}))
+            return "circuit_open"
         allowed, why = reserve_request(run_dir, cfg, attempt_id, "observation")
         if not allowed:
             call_log._append_jsonl(_links_path(run_dir), dict(hashes, **{
@@ -254,12 +325,15 @@ def _send(run_dir, attempt_id, request_bytes, cfg, hashes):
             return "observed"
         if status in REFUSED:
             # the body itself is refused: sending the same bytes again can only be refused
-            # again, so this is terminal and flush leaves it alone
+            # again, so this is terminal and flush leaves it alone. The breaker opens: the
+            # next bodies of the scope would be refused for the same reason
+            detail = (body or b"")[:300].decode("utf-8", "replace")
             call_log._append_jsonl(_links_path(run_dir), dict(hashes, **{
                 "provider_attempt_id": attempt_id, "status": "invalid_request",
                 "at_utc": call_log.utc_iso(), "http_status": status,
                 "error": "NeoMundi refused this body; it is not sent again. The call stays "
                          "unobserved until a corrected observation is made deliberately"}))
+            open_breaker(run_dir, "HTTP %d on %s: %s" % (status, attempt_id, detail))
             return "invalid_request"
         if status is not None and status not in RETRYABLE:
             break
@@ -314,8 +388,8 @@ def observe(run_dir, line, request_bytes, response_bytes):
     cfg = run_config(run_dir)
     if not cfg or not cfg.get("enabled") or line.get("role") not in cfg.get("observe_roles", ["agent"]):
         return None
-    raw = json.dumps(build_body(line, request_bytes, response_bytes, cfg),
-                     ensure_ascii=False).encode("utf-8")
+    body = build_body(line, request_bytes, response_bytes, cfg)
+    raw = json.dumps(body, ensure_ascii=False).encode("utf-8")
     folder = os.path.join(_folder(run_dir), "requests")
     os.makedirs(folder, exist_ok=True)
     with open(os.path.join(folder, line["provider_attempt_id"] + ".json"), "xb") as f:
@@ -550,9 +624,16 @@ if __name__ == "__main__":
     if len(sys.argv) == 4 and sys.argv[1] == "probe":
         print(probe(os.path.abspath(sys.argv[2]), sys.argv[3]))
         raise SystemExit(0)
+    if len(sys.argv) >= 2 and sys.argv[1] == "breaker":
+        if "--reset" in sys.argv:
+            print("breaker reset" if reset_breaker() else "no breaker was open")
+        else:
+            print(json.dumps(breaker_open(), ensure_ascii=False, indent=1) or "breaker closed")
+        raise SystemExit(0)
     if len(sys.argv) != 3 or sys.argv[1] not in ("flush", "verify"):
         raise SystemExit("usage: python neomundi_client.py flush|verify <run_dir>\n"
-                         "       python neomundi_client.py probe <run_dir> <provider_attempt_id>")
+                         "       python neomundi_client.py probe <run_dir> <provider_attempt_id>\n"
+                         "       python neomundi_client.py breaker [--reset]   (scope from TEST_PURCHASE_BUDGET_SCOPE)")
     run_dir = os.path.abspath(sys.argv[2])
     if sys.argv[1] == "flush":
         print(json.dumps(flush(run_dir), ensure_ascii=False, indent=1))

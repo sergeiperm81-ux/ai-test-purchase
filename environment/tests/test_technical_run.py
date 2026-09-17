@@ -15,7 +15,7 @@ for p in (BASE, HERE):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-import series, technical_run, providers, confirm
+import series, technical_run, providers, confirm, neomundi_client
 
 KEYS = ("PILOT_OPENAI_API_KEY", "PILOT_ANTHROPIC_API_KEY", "PILOT_GEMINI_API_KEY", "PILOT_XAI_API_KEY",
         "PILOT_MISTRAL_API_KEY", "PILOT_COHERE_API_KEY", "PILOT_INFOMANIAK_API_KEY",
@@ -28,6 +28,9 @@ class TestTechnicalRun(unittest.TestCase):
         self.saved = {k: getattr(series, k) for k in ("SERIES", "RUNS", "ANCHORS", "run_cmd")}
         self.saved_providers = (providers.MODELS, providers.BASE)
         providers.BASE = self.tmp          # keys come from the environment of the test only, never from .env
+        self.saved_tech_base = technical_run.BASE
+        technical_run.BASE = self.tmp      # the rehearsal ledgers and the breaker live in the sandbox
+        self.trip_after = None
         series.SERIES = os.path.join(self.tmp, "series")
         series.RUNS = os.path.join(self.tmp, "runs")
         series.ANCHORS = os.path.join(self.tmp, "anchors")
@@ -44,6 +47,7 @@ class TestTechnicalRun(unittest.TestCase):
         for k, v in self.saved.items():
             setattr(series, k, v)
         providers.MODELS, providers.BASE = self.saved_providers
+        technical_run.BASE = self.saved_tech_base
         os.environ.clear()
         os.environ.update(self.saved_env)
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -61,6 +65,10 @@ class TestTechnicalRun(unittest.TestCase):
             series.jdump(os.path.join(run_dir, "manifest.json"),
                          {"run_id": run_id, "model_requested": model, "model_reported": model,
                           "provider": {"provider": "stub"}})
+            if self.trip_after == self.n:
+                # what the client does on the first body NeoMundi cannot accept
+                neomundi_client.open_breaker(run_dir, "oversize on %s.C0001.A1: llm_prompt is "
+                                             "125000 characters, the limit is 10000" % run_id)
             return 0, "Run:    %s\n" % run_id, ""
         if args[0] == "freeze_matrix.py":
             series.jdump(os.path.join(args[1], "freeze_manifest.json"), {"files": {}})
@@ -72,9 +80,9 @@ class TestTechnicalRun(unittest.TestCase):
     def ns(self, **kw):
         return types.SimpleNamespace(**kw)
 
-    def plan_today(self, window="00:00-23:59"):
+    def plan_today(self, window="00:00-23:59", neomundi=False):
         today = datetime.date.today().isoformat()
-        technical_run.plan(self.ns(start=today, seed=7, neomundi=False, window_utc=window,
+        technical_run.plan(self.ns(start=today, seed=7, neomundi=neomundi, window_utc=window,
                                    models=self.models))
         return series.current_series()
 
@@ -101,6 +109,31 @@ class TestTechnicalRun(unittest.TestCase):
         self.confirm_command_a(sid, folder)
         return sid, folder
 
+    def test_an_open_neomundi_breaker_stops_the_rest_of_the_round(self):
+        # the third purchase meets a body NeoMundi cannot accept: its breaker opens, and the
+        # five purchases after it are not started, because each would end pending_measurement
+        # for the same reason. After an operator reset, the same command runs the rest
+        self.keys()
+        os.environ["PILOT_NEOMUNDI_API_KEY"] = "stand-in"
+        sid, folder = self.plan_today(neomundi=True)
+        self.confirm_command_a(sid, folder)
+        self.assertTrue(series.jload(os.path.join(folder, "models.json"))["neomundi"]["enabled"])
+        self.trip_after = 3
+        technical_run.day(self.ns(override=None, dry=False))
+        self.assertEqual(len(self.harness_tags()), 3)
+        self.assertIn("technical-%s-neomundi" % sid, neomundi_client.breaker_path(sid))
+        held = [e for e in series.registry(folder) if e["status"] == "not_started"]
+        self.assertEqual(len(held), 5)
+        self.assertIn("the NeoMundi breaker is open: oversize on", held[0]["note"])
+        provisional = glob.glob(os.path.join(folder, "%s.rehearsal.*.json" % sid))
+        self.assertEqual(len(provisional), 1)
+        anchor = series.jload(provisional[0])
+        self.assertEqual((anchor["state"], anchor["purchases_complete"]), ("provisional", 3))
+        self.assertTrue(neomundi_client.reset_breaker(sid))
+        technical_run.day(self.ns(override=None, dry=False))
+        self.assertEqual(sorted(self.harness_tags()), ["D01-%s" % c for c in "ABCDEFGH"])
+        self.assertTrue(os.path.exists(os.path.join(folder, "%s.rehearsal.final.json" % sid)))
+
     def test_one_round_of_eight(self):
         sid, folder = self.ready()
         self.assertTrue(sid.startswith("TECH-"))
@@ -110,8 +143,11 @@ class TestTechnicalRun(unittest.TestCase):
         self.assertEqual((pl["days"], pl["models"]), (1, 8))
         derived = series.jload(os.path.join(folder, "models.json"))
         self.assertEqual(derived["limits"]["budget"]["per_scope"], {"USD": 10.0, "CHF": 2.0})
-        self.assertEqual((derived["neomundi"]["max_requests_per_scope"],
-                          derived["neomundi"]["max_requests_per_purchase"]), (400, 50))
+        self.assertEqual((derived["neomundi"]["max_observations_per_scope"],
+                          derived["neomundi"]["max_observations_per_purchase"],
+                          derived["neomundi"]["max_contracts_per_scope"],
+                          derived["neomundi"]["max_contracts_per_purchase"]), (480, 60, 480, 60))
+        self.assertEqual(derived["neomundi"]["max_prompt_chars"], 10000)
         self.assertFalse(derived["neomundi"]["enabled"])
 
         technical_run.day(self.ns(override=None, dry=False))

@@ -629,6 +629,16 @@ def run_manifest(sid, day, label, model, run_id, status, pl, override):
 
 # ------------------------------------------------------------------ a day
 
+def observations_on(folder):
+    """Whether the purchases of this series send observations: the frozen models file of
+    the series says so (or the declared NeoMundi configuration, which is enabled by
+    construction)."""
+    pl = jload(os.path.join(folder, "plan.json"))
+    if (pl.get("neomundi") or {}).get("required"):
+        return True
+    return bool((jload(os.path.join(folder, "models.json")).get("neomundi") or {}).get("enabled"))
+
+
 def date_override(d, reason):
     """None on the planned date; otherwise the recorded diagnostic override, or a refusal."""
     today = datetime.date.today().isoformat()
@@ -658,9 +668,11 @@ def neomundi_config_problems(cfg):
         problems.append("observe_roles is empty")
     if not isinstance(cfg.get("max_attempts"), int) or cfg["max_attempts"] < 1:
         problems.append("max_attempts is not a positive integer")
-    for k in ("max_requests_per_scope", "max_requests_per_purchase"):
+    for k in ("max_observations_per_scope", "max_observations_per_purchase",
+              "max_contracts_per_scope", "max_contracts_per_purchase", "max_prompt_chars"):
         if not isinstance(cfg.get(k), int) or cfg[k] < 1:
-            problems.append("%s is not a positive integer: every outgoing request must be capped" % k)
+            problems.append("%s is not a positive integer: every outgoing request must be capped "
+                            "and every body checked for size before it leaves" % k)
     return problems
 
 
@@ -801,6 +813,12 @@ def day(a):
             continue
         if not stop_day and window and not override and not in_window(window):
             stop_day = "the UTC window %s of the plan is closed" % window
+        if not stop_day and observations_on(folder):
+            opened = neomundi_client.breaker_open(sid)
+            if opened:
+                # every further purchase would end pending_measurement for the same reason:
+                # the money is better kept until the cause is settled
+                stop_day = "the NeoMundi breaker is open: %s" % str(opened.get("reason"))[:160]
         if stop_day:
             record(folder, {"series": sid, "day": d["day"], "date": d["date"], "label": label,
                             "attempt": None, "run_id": None, "status": "not_started",

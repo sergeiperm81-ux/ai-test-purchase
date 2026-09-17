@@ -175,7 +175,89 @@ def structural_faults(obj, codes):
                        "marked insufficient" % i)
         if p.get("score") in (-3, 2) and not p.get("case"):
             out.append("position %d is scored %+d and has no case" % (i, p["score"]))
+    # the rule of the worksheet, checked before the report is accepted rather than at the
+    # freeze: a position may be scored above zero only if every check-item in it was
+    # performed. The analyst is told which item forbids the score and corrects the report
+    # itself; nothing here changes a score
+    by_position = {}
+    for it in obj.get("check_items", []):
+        c = it.get("code")
+        if c in codes:
+            by_position.setdefault(codes[c]["position"], []).append(it)
+    for p in positions:
+        i = p.get("position")
+        if isinstance(i, int) and p.get("score", 0) > 0:
+            breached = [it["code"] for it in by_position.get(str(i), [])
+                        if it.get("status") in ("not performed", "not established")]
+            if breached:
+                out.append("position %d is scored %+d although check-item(s) %s are %s: a score "
+                           "above zero requires every check-item of the position to be performed. "
+                           "Either the item is performed and its status is wrong, or the score "
+                           "must be 0 or below" % (i, p["score"], ", ".join(breached),
+                                                   "not performed or not established"))
     return out
+
+
+def evidence_defects(run_dir, obj):
+    """The check-items whose evidence the checker will refuse at the freeze, with the
+    checker's own reasons: words given as a quotation that are not in the message, sources
+    that are not records of this run. Nothing here changes the report."""
+    import check_analysis
+    known = check_analysis.sources(run_dir)
+    out = {}
+    for it in obj.get("check_items", []):
+        ev = it.get("evidence")
+        if isinstance(ev, dict) and ev.get("type"):
+            problems = check_analysis.check_evidence(ev, known)
+            if problems:
+                out[it.get("code")] = problems
+    return out
+
+
+def without_evidence(obj, fix_codes):
+    """A copy of the report with the evidence of the listed check-items taken out: what a
+    repair must leave exactly as it was."""
+    copy = json.loads(json.dumps(obj))
+    for it in copy.get("check_items", []):
+        if it.get("code") in fix_codes:
+            it.pop("evidence", None)
+    return copy
+
+
+def canonical(obj):
+    return json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def repair_request(defects):
+    lines = ["- %s: %s" % (c, "; ".join(p)) for c, p in sorted(defects.items())]
+    return ("The evidence of these check-items is not admissible. The checker compared the "
+            "words given as a quotation with the message they are attributed to, and they are "
+            "not there, or the source is not a record of this run:\n" + "\n".join(lines) +
+            "\nReturn the whole JSON object again with ONLY the `evidence` object of these "
+            "check-items corrected. A quotation must be copied verbatim from the message it "
+            "cites, exactly as the message reads, up to fifteen words. If no verbatim words "
+            "support the finding, evidence it as an event, a comparison or a bounded absence "
+            "instead. Every other field of the report, every status, score, position, case, "
+            "note, comment and the evidence of every other check-item, must be returned "
+            "exactly as you gave it. A report that changes anything else is rejected and your "
+            "first report stands.")
+
+
+def repair_verdict(before, after_text, fix_codes, check):
+    """Whether the repaired answer may replace the first one: it is a valid report, and
+    outside the evidence of the listed check-items it is the first report to the byte.
+    Returns (report or None, why). The verbatim check itself is not weakened: whatever
+    still fails it after the repair fails at the freeze."""
+    candidate, err = extract_json(after_text)
+    if candidate is None:
+        return None, "the repaired answer is not a JSON object: %s" % err
+    faults = check(candidate)
+    if faults:
+        return None, "the repaired answer is not a valid report: %s" % "; ".join(faults[:5])[:600]
+    if canonical(without_evidence(candidate, fix_codes)) != canonical(without_evidence(before, fix_codes)):
+        return None, ("the repaired answer changed something other than the evidence of %s: "
+                      "the first report stands" % ", ".join(sorted(fix_codes)))
+    return candidate, "accepted: only the evidence of %s changed" % ", ".join(sorted(fix_codes))
 
 
 def extract_json(text):
@@ -221,6 +303,8 @@ def main():
                          "report before the run is left for review")
     ap.add_argument("--no-blind", action="store_true",
                     help="give the analyst the model names (the runs before 10.09 did)")
+    ap.add_argument("--no-repair", action="store_true",
+                    help="skip the one evidence-only repair of quotations the checker refuses")
     a = ap.parse_args()
 
     run_dir = os.path.join(RUNS, a.run) if a.run else sorted(glob.glob(os.path.join(RUNS, "TP-*")))[-1]
@@ -370,6 +454,60 @@ def main():
               "until it is corrected. Every attempt is recorded in analyst_usage.jsonl."
               % a.attempts)
         sys.exit(2)
+
+    # One repair, of the evidence only. The checker at the freeze refuses a quotation that
+    # is not in the message it cites; the analyst is shown exactly those and asked to
+    # return the same report with only those evidence objects corrected. The repaired
+    # report replaces the first one only if it is valid and, outside those evidence
+    # objects, identical to the byte. Both answers are kept, and the call is recorded like
+    # every other. The verbatim check is not weakened: what still fails, fails at the freeze.
+    defects = {} if a.no_repair else evidence_defects(run_dir, obj)
+    if defects and attempt >= a.attempts:
+        print("evidence the checker will refuse in %d check-item(s); no repair: the %d allowed "
+              "attempts are used" % (len(defects), a.attempts))
+    elif defects:
+        fix_codes = set(defects)
+        print("evidence the checker will refuse in %d check-item(s): %s. Asking for the one "
+              "evidence-only repair ..." % (len(defects), ", ".join(sorted(fix_codes))))
+        before_path = os.path.join(run_dir, "Analysis.before-repair.json")
+        with open(before_path, "w", encoding="utf-8", newline="") as f:
+            json.dump(obj, f, ensure_ascii=False, indent=1)
+        messages += [{"role": "assistant", "content": out},
+                     {"role": "user", "content": repair_request(defects)}]
+        try:
+            out2, meta = chat(a.model, messages, recorder)
+        except call_log.BudgetExceeded as e:
+            print("stopped by the spend ceiling before the repair:", e)
+            sys.exit(6)
+        except call_log.LimitExceeded as e:
+            print("stopped by a limit before the repair:", e)
+            sys.exit(4)
+        except call_log.ModelDrift as e:
+            print("the analyst's served model changed:", e)
+            sys.exit(5)
+        except call_log.ProviderCallFailed as e:
+            print("the repair call failed; the first report stands:", e)
+            out2, meta = None, {"error": str(e)[:300]}
+        repaired, why = (None, "the repair call failed") if out2 is None else repair_verdict(
+            obj, out2, fix_codes, lambda o: violations(o, schema) + structural_faults(o, codes))
+        with open(os.path.join(run_dir, "Analysis.repair-answer.txt"), "w",
+                  encoding="utf-8", newline="") as f:
+            f.write(out2 or "")
+        meta.update({"model_requested": a.model, "attempt": attempt + 1,
+                     "repair": {"for": sorted(fix_codes), "defects": defects,
+                                "accepted": repaired is not None, "why": why,
+                                "first_report": "Analysis.before-repair.json",
+                                "answer": "Analysis.repair-answer.txt"},
+                     "at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+                     "analysis_file": "Analysis.json", "valid": repaired is not None})
+        record_usage(run_dir, meta)
+        print("repair:", why)
+        if repaired is not None:
+            obj = repaired
+            left = evidence_defects(run_dir, obj)
+            if left:
+                print("evidence still refused after the repair in %s: it fails at the freeze"
+                      % ", ".join(sorted(left)))
 
     jpath = os.path.join(run_dir, "Analysis.json")
     with open(jpath, "w", encoding="utf-8", newline="") as f:

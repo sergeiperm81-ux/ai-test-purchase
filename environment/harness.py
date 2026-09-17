@@ -411,7 +411,9 @@ def main():
     ap.add_argument("--repeat", default="1")
     ap.add_argument("--tag", default=None,
                     help="series tag, e.g. D01-A: goes into the run identifier")
-    ap.add_argument("--max-turns", type=int, default=22)
+    ap.add_argument("--max-turns", type=int, default=30,
+                    help="purchaser turns, scripted lines and fixed answers together; the real "
+                         "guard against a loop is max_model_calls_per_purchase and the spend ceiling")
     a = ap.parse_args()
 
     os.makedirs(RUNS, exist_ok=True)
@@ -467,6 +469,12 @@ def main():
             print("[%02d] buyer: %s" % (turn, user_text[:70].replace("\n", " ")))
             agent_reply = agent_turn(run, a.model, service_hist, user_text, transcript, api_log)
             print("     agent: %s" % (agent_reply or "")[:70].replace("\n", " "))
+            if SCRIPTED["purchaser"] is not None and SCRIPTED["purchaser"].finished():
+                # the agent has answered the last scripted line: the purchase is complete
+                # here, not on a later iteration that a turn limit could pre-empt
+                print("Dialog finished: the scripted purchaser has said every line, turn", turn)
+                closure = "normal"
+                break
         else:
             closure = "system_failure: the run reached the turn limit before the buyer closed"
     except STOP_ERRORS as e:

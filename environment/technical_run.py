@@ -26,9 +26,11 @@ import series
 
 REHEARSAL_DAYS = 1
 REHEARSAL_CEILING = {"USD": 10.0, "CHF": 2.0}
-# every outgoing NeoMundi request of the rehearsal, observations and contracts, successful or
-# not: 50 per purchase (about 20 observations and 20 contracts), 400 for the eight
-REHEARSAL_NEOMUNDI_CAPS = {"max_requests_per_scope": 400, "max_requests_per_purchase": 50}
+# every outgoing NeoMundi request of the rehearsal counts, successful or not, observations
+# and contract retrievals separately: 60 of each per purchase (the hard stop of model calls
+# per purchase), 480 of each for the eight. max_prompt_chars stays what the models file says
+REHEARSAL_NEOMUNDI_CAPS = {"max_observations_per_scope": 480, "max_observations_per_purchase": 60,
+                           "max_contracts_per_scope": 480, "max_contracts_per_purchase": 60}
 
 
 def technical_models(source, neomundi_enabled):

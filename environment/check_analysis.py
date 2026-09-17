@@ -143,7 +143,13 @@ def fragments(text):
     """A quotation with an ellipsis is several fragments, each of which must be in the
     source. A bracketed insertion is the quoter's own word and is not looked for."""
     text = re.sub(r"\[[^\]]*\]", "…", text or "")
-    return [p for p in (norm(x) for x in re.split(r"…|\.\.\.", text)) if len(p) >= 8]
+    parts = [norm(x) for x in re.split(r"…|\.\.\.", text)]
+    long = [p for p in parts if len(p) >= 8]
+    if long:
+        return long
+    # a short quotation, an identifier or a figure such as A-712 or 71.0 m2 (schema 1.1
+    # admits them), is looked for whole: short does not mean unverified
+    return [p for p in parts if p]
 
 
 def sources(run_dir):

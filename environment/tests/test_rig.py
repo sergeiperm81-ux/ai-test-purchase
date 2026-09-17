@@ -56,7 +56,9 @@ def models_file(folder, url, **over):
         "neomundi": {"enabled": False, "base_url": url + "/nm", "observe_path": "/v1/govern",
                      "contract_path": "/v1/rgc/contracts/{request_id}", "key_env": "TESTKEY_NM",
                      "mode": "OBS", "observe_roles": ["agent"], "max_attempts": 3,
-                     "max_requests_per_scope": 100, "max_requests_per_purchase": 50},
+                     "max_observations_per_scope": 100, "max_observations_per_purchase": 50,
+                     "max_contracts_per_scope": 100, "max_contracts_per_purchase": 50,
+                     "max_prompt_chars": 200000},
         "models": [
             cfg("oa-model", "oa:oa-model", url, "/oa/v1", max_tokens_param="max_completion_tokens"),
             cfg("anth-model", "an:anth-model", url, "/anth/v1", protocol="anthropic_messages",
@@ -605,6 +607,11 @@ class TestNeoMundi(RigCase):
                          {"RUN-T.C0001.A1": "refused by NeoMundi: not sent again"})
         self.assertEqual(len(self.mock.to(self.GOVERN)), 1)
         self.assertFalse(neomundi_client.verify_links(self.run_dir)[0])
+        opened = neomundi_client.breaker_open("test-scope")
+        self.assertIn("HTTP 422 on RUN-T.C0001.A1", opened["reason"])
+        self.chat()                                             # the next call is not observed at all
+        self.assertEqual(len(self.mock.to(self.GOVERN)), 1)
+        self.assertEqual(neomundi_client.links(self.run_dir)[-1]["status"], "circuit_open")
 
     def test_an_observation_without_a_request_id_is_a_problem(self):
         self.use_models(neomundi={"enabled": True})
@@ -618,7 +625,7 @@ class TestNeoMundi(RigCase):
 
     def test_every_outgoing_request_counts_against_the_scope_cap(self):
         # cap 2 for the scope: two failed tries leave, the third is not sent at all
-        self.use_models(neomundi={"enabled": True, "max_requests_per_scope": 2})
+        self.use_models(neomundi={"enabled": True, "max_observations_per_scope": 2})
         self.mock.route("/oa/", ok(openai_body()))
         self.mock.route(self.GOVERN, (500, {}, b"down"))
         self.chat()
@@ -630,22 +637,27 @@ class TestNeoMundi(RigCase):
         self.assertEqual(len(self.mock.to("/oa/")), 1)          # the model is not re-called
         self.assertFalse(neomundi_client.verify_links(self.run_dir)[0])
 
-    def test_contract_requests_count_too_and_the_purchase_cap_holds(self):
-        # cap 1 per purchase: the observation leaves, the contract request does not
-        self.use_models(neomundi={"enabled": True, "max_requests_per_purchase": 1})
+    def test_contract_requests_have_their_own_purchase_cap(self):
+        # contracts capped at 1 per purchase, observations not: the second observation leaves,
+        # its contract request does not
+        self.use_models(neomundi={"enabled": True, "max_contracts_per_purchase": 1})
         self.mock.route("/oa/", ok(openai_body()))
         self.neomundi_up()
-        self.chat()
-        self.assertEqual(len(self.mock.to(self.GOVERN)), 1)
-        self.assertEqual(self.mock.to(self.CONTRACTS), [])
+        rec = self.recorder()
+        self.chat(rec=rec)
+        self.chat(rec=rec)
+        self.assertEqual(len(self.mock.to(self.GOVERN)), 2)
+        self.assertEqual(len(self.mock.to(self.CONTRACTS)), 1)
         self.assertEqual([l["status"] for l in neomundi_client.links(self.run_dir)],
-                         ["observed", "contract_pending"])
-        self.assertEqual(neomundi_client.requests_made(run_id="RUN-T"), 1)
+                         ["observed", "contract", "observed", "contract_pending"])
+        self.assertIn("cap of 1 NeoMundi contracts", neomundi_client.links(self.run_dir)[-1]["error"])
+        self.assertEqual(neomundi_client.requests_made(run_id="RUN-T"), 3)
+        self.assertEqual(neomundi_client.requests_made(run_id="RUN-T", kind="observation"), 2)
+        self.assertEqual(neomundi_client.requests_made(run_id="RUN-T", kind="contract"), 1)
 
     def test_a_purchase_of_twenty_calls_fits_under_the_purchase_cap(self):
-        # 20 observations and 20 contracts: 40 requests, under the cap of 50 set for a purchase
-        self.use_models(neomundi={"enabled": True, "max_requests_per_purchase": 50,
-                                  "max_requests_per_scope": 500})
+        # 20 observations and 20 contracts, under the caps of 50 of each per purchase
+        self.use_models(neomundi={"enabled": True})
         self.mock.route("/oa/", ok(openai_body()))
         self.neomundi_up()
         rec = self.recorder()
@@ -659,12 +671,57 @@ class TestNeoMundi(RigCase):
         self.assertEqual((detail["observed"], detail["contracts"]), (20, 20))
 
     def test_without_caps_nothing_is_sent(self):
-        self.use_models(neomundi={"enabled": True, "max_requests_per_scope": None})
+        self.use_models(neomundi={"enabled": True, "max_observations_per_scope": None})
         self.mock.route("/oa/", ok(openai_body()))
         self.neomundi_up()
         self.chat()
         self.assertEqual(self.mock.to("/nm/"), [])
-        self.assertIn("no request caps", neomundi_client.links(self.run_dir)[-1]["error"])
+        self.assertIn("no observation caps", neomundi_client.links(self.run_dir)[-1]["error"])
+
+    def test_an_oversize_body_is_not_sent_and_opens_the_breaker(self):
+        # the limit NeoMundi enforces on llm_prompt is checked before anything leaves; the
+        # context is never cut down to fit. The breaker then stops every later observation
+        # of the scope, and a reset lets them through again
+        self.use_models(neomundi={"enabled": True, "max_prompt_chars": 10})
+        self.mock.route("/oa/", ok(openai_body()))
+        self.neomundi_up()
+        rec = self.recorder()
+        self.chat(rec=rec)
+        self.assertEqual(self.mock.to("/nm/"), [])
+        first = neomundi_client.links(self.run_dir)[-1]
+        self.assertEqual(first["status"], "oversize")
+        self.assertGreater(first["llm_prompt_chars"], 10)
+        self.assertIn("the limit is 10", first["error"])
+        self.assertTrue(os.path.exists(os.path.join(self.run_dir, "neomundi", "requests", "RUN-T.C0001.A1.json")))
+        opened = neomundi_client.breaker_open("test-scope")
+        self.assertEqual(opened["run_id"], "RUN-T")
+        self.assertIn("oversize on RUN-T.C0001.A1", opened["reason"])
+        self.assertEqual(neomundi_client.requests_made(run_id="RUN-T"), 0)
+        self.use_models(neomundi={"enabled": True})
+        self.chat(rec=rec)
+        self.assertEqual(self.mock.to("/nm/"), [])
+        self.assertEqual(neomundi_client.links(self.run_dir)[-1]["status"], "circuit_open")
+        self.assertEqual(len(self.mock.to("/oa/")), 2)          # the model is still called
+        self.assertFalse(neomundi_client.verify_links(self.run_dir)[0])
+        self.assertTrue(neomundi_client.reset_breaker("test-scope"))
+        self.assertIsNone(neomundi_client.breaker_open("test-scope"))
+        # a flush sends under the frozen configuration of the run: the same limit, the same
+        # bodies, so nothing leaves and the breaker opens again. Only a new configuration
+        # agreed with NeoMundi changes that, never a shorter body made here
+        self.assertEqual(neomundi_client.flush(self.run_dir),
+                         {"RUN-T.C0001.A1": "oversize", "RUN-T.C0002.A1": "circuit_open"})
+        self.assertEqual(self.mock.to("/nm/"), [])
+        self.assertIn("oversize on RUN-T.C0001.A1", neomundi_client.breaker_open("test-scope")["reason"])
+
+    def test_without_a_size_limit_nothing_is_sent(self):
+        self.use_models(neomundi={"enabled": True, "max_prompt_chars": None})
+        self.mock.route("/oa/", ok(openai_body()))
+        self.neomundi_up()
+        self.chat()
+        self.assertEqual(self.mock.to("/nm/"), [])
+        self.assertEqual(neomundi_client.links(self.run_dir)[-1]["status"], "oversize")
+        self.assertIn("no max_prompt_chars", neomundi_client.links(self.run_dir)[-1]["error"])
+        self.assertIsNotNone(neomundi_client.breaker_open("test-scope"))
 
     def test_analyst_calls_are_not_observed(self):
         self.use_models(neomundi={"enabled": True})
