@@ -22,6 +22,7 @@ sends one, and each repeat needs its own reservation. A complete answer is retur
 never asked for again, whatever it says.
 """
 import os, json, time, datetime, email.utils, urllib.request, urllib.error, http.client
+import fsio
 
 import call_log
 import adapter_anthropic
@@ -71,7 +72,7 @@ def pilot():
 def configuration_version():
     if not os.path.exists(MODELS):
         return None
-    return call_log.sha256_bytes(open(MODELS, "rb").read())
+    return call_log.sha256_bytes(fsio.read_bytes(MODELS))
 
 
 def config_for(model):

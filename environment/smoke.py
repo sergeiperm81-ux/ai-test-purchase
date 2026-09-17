@@ -26,6 +26,7 @@ Usage: python smoke.py --scope SMOKE-<name> [--only model1,model2] [--dry]
        python smoke.py --analyst --scope SMOKE-ANALYST-<name> [--dry]
 """
 import os, sys, json, argparse, datetime, shutil, tempfile
+import fsio
 
 sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -42,6 +43,17 @@ ANALYST_MESSAGES = [{"role": "system", "content": "Answer with one JSON object a
                     {"role": "user", "content": "Return {\"ok\": true}."}]
 SCOPE_CAP = {"USD": 0.04, "CHF": 0.01}
 MAX_OUTPUT = 96
+
+
+def analyst_answer_ok(content, finish_reason):
+    """True only for a complete, non-empty JSON object carrying the value asked for."""
+    if finish_reason == "length" or not (content or "").strip():
+        return False
+    try:
+        obj = json.loads(content)
+    except ValueError:
+        return False
+    return isinstance(obj, dict) and obj.get("ok") is True
 
 
 def configurations(data, analyst=False):
@@ -129,7 +141,7 @@ def main():
     a = ap.parse_args()
 
     source = os.environ.get("TEST_PURCHASE_MODELS_FILE", os.path.join(BASE, "models.json"))
-    data = json.load(open(source, encoding="utf-8"))
+    data = fsio.read_json(source)
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d-%H%M%SZ")
     run_id = a.scope or (("SMOKE-ANALYST-" if a.analyst else "SMOKE-") + stamp)
     run_dir = tempfile.mkdtemp(prefix="smoke-dry-") if a.dry else os.path.join(BASE, "runs", run_id)
@@ -190,6 +202,13 @@ def main():
                 correct = len(calls) == 1 and calls[0]["function"]["name"] == "ping"
                 row.update(tool_calls=len(calls), tool_called_correctly=correct)
                 passed = passed and correct
+            else:
+                # the analyst is checked for what it is for: a complete, non-empty answer that
+                # is the JSON asked for. An answer cut off by the output limit, or empty because
+                # every token went into reasoning, is a failure whatever model was reported
+                answered = analyst_answer_ok(msg.get("content"), meta.get("finish_reason"))
+                row.update(answer_ok=answered)
+                passed = passed and answered
         except (call_log.LimitExceeded, call_log.ProviderCallFailed, call_log.ModelDrift) as e:
             row["result"] = "%s: %s" % (type(e).__name__, str(e)[:200])
             passed = False

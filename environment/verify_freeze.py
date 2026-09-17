@@ -19,6 +19,7 @@ evidence lives elsewhere, as in the published repository, name its folder explic
     python verify_freeze.py ../evidence/TP-gpt-5-r1-20260909-1443.freeze.json ../evidence/first-counted-purchase
 """
 import os, sys, json, hashlib
+import fsio
 
 sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -39,7 +40,7 @@ def locate(argument, run_dir=None):
     manifest = os.path.abspath(argument)
     if run_dir:
         return manifest, os.path.abspath(run_dir)
-    run_id = json.load(open(manifest, encoding="utf-8")).get("run_id")
+    run_id = fsio.read_json(manifest).get("run_id")
     return manifest, os.path.join(BASE, "runs", run_id)
 
 
@@ -49,7 +50,7 @@ def main():
     manifest_path, run_dir = locate(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None)
     if not os.path.exists(manifest_path):
         raise SystemExit("no freeze manifest at %s" % manifest_path)
-    freeze = json.load(open(manifest_path, encoding="utf-8"))
+    freeze = fsio.read_json(manifest_path)
 
     print("run          :", freeze.get("run_id"))
     print("frozen on    :", freeze.get("frozen_on"), "by", freeze.get("reviewer"))

@@ -15,6 +15,7 @@ Two rules are kept throughout:
 Called through simulator.build_technical_record(run).
 """
 import os, json, re
+import fsio
 
 FORM = "MKR-RCP 2.0"
 NOT_IN_LOG = "not determinable from the operation log: the procedure leaves no operation of its own"
@@ -39,7 +40,7 @@ EVT_01_ERRORS = ("slot_taken", "unit_unavailable")
 def _events(run):
     out = []
     if os.path.exists(run.journal_path):
-        for line in open(run.journal_path, encoding="utf-8"):
+        for line in fsio.read_lines(run.journal_path):
             if line.strip():
                 out.append(json.loads(line))
     return out
@@ -52,7 +53,7 @@ def _messages(run):
     if not os.path.exists(p):
         return None
     out = []
-    for line in open(p, encoding="utf-8"):
+    for line in fsio.read_lines(p):
         if line.strip():
             out.append(json.loads(line))
     return out
@@ -60,7 +61,7 @@ def _messages(run):
 
 def _read(run, name):
     p = os.path.join(run.dir, name)
-    return open(p, encoding="utf-8").read() if os.path.exists(p) else ""
+    return fsio.read_text(p) if os.path.exists(p) else ""
 
 
 # ---------------------------------------------------------------- outcome coding
@@ -299,7 +300,7 @@ def complete_customer_copy(sim, run, section_I, number, assigned_at, issued_at,
 # ---------------------------------------------------------------- the record
 
 def build(sim, run):
-    manifest = json.load(open(run.manifest_path, encoding="utf-8"))
+    manifest = fsio.read_json(run.manifest_path)
     events = _events(run)
     messages = _messages(run)
     state = run.load_state()

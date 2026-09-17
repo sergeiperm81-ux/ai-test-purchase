@@ -28,6 +28,7 @@ Reads:  matrix_corrections.json, Analysis.json, analysis_check.json, validation_
 Writes: <run_dir>/Matrix-final.json and Matrix-final.md
 """
 import os, sys, json, hashlib, re, glob
+import fsio
 
 sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -61,10 +62,10 @@ def analyst_matrix(run_dir):
             "no Analysis.json in this run: the frozen matrix is derived from the analyst's "
             "report as data, and that report has not been produced. Run analyst.py over "
             "this purchase.")
-    a = json.load(open(path, encoding="utf-8"))
+    a = fsio.read_json(path)
     rendered = analysis_render.render(a).encode("utf-8")
     readable = os.path.join(run_dir, "Analysis.md")
-    if not os.path.exists(readable) or open(readable, "rb").read() != rendered:
+    if not os.path.exists(readable) or fsio.read_bytes(readable) != rendered:
         raise SystemExit("Analysis.md is not the deterministic rendering of Analysis.json. "
                          "Re-render it before freezing; the readable report and the data "
                          "must not tell different stories")
@@ -89,7 +90,7 @@ def one_run_only(run_dir, corrections):
         if path is None:
             value = corrections.get(key)
         elif os.path.exists(path):
-            value = json.load(open(path, encoding="utf-8")).get(key)
+            value = fsio.read_json(path).get(key)
         else:
             found[name] = "file absent"
             continue
@@ -103,7 +104,7 @@ def one_run_only(run_dir, corrections):
                             % (name, value, expected))
     analysis = os.path.join(run_dir, "Analysis.json")
     if os.path.exists(analysis):
-        named = json.load(open(analysis, encoding="utf-8")).get("run_id")
+        named = fsio.read_json(analysis).get("run_id")
         if named != expected:
             problems.append("Analysis.json is about run %s" % named)
     if problems:
@@ -161,7 +162,7 @@ def snapshot_inputs(run_dir):
                              "environment_file_now": sha256_file(env[key])}
     mpath = os.path.join(run_dir, "manifest.json")
     if os.path.exists(mpath):
-        recorded = (((json.load(open(mpath, encoding="utf-8")).get("document_checksums") or {})
+        recorded = (((fsio.read_json(mpath).get("document_checksums") or {})
                      .get("worksheet")) or {}).get("sha256")
         analysed = next((v["sha256"] for k, v in copies.items() if "worksheet" in k), None)
         copies["worksheet_the_purchase_ran_under"] = {
@@ -202,7 +203,7 @@ def classes(path):
     the worksheet is the document the reviewer signs, and this tool must not disagree
     with it silently."""
     out, started = {}, False
-    for line in open(path, encoding="utf-8"):
+    for line in fsio.read_lines(path):
         if line.startswith("5. Severity class"):
             started = True
             continue
@@ -217,7 +218,7 @@ def classes(path):
 
 def check_item_positions(path):
     out = {}
-    for line in open(path, encoding="utf-8"):
+    for line in fsio.read_lines(path):
         m = re.match(r"^(\d{1,2}\.\d{1,2}) \| (\d{1,2}) \| ", line.strip())
         if m:
             out[m.group(1)] = int(m.group(2))
@@ -232,7 +233,7 @@ def main():
     # anchor per purchase would turn the folder of anchors into a heap
     write_anchor = "--no-anchor" not in sys.argv[2:]
     corr_path = os.path.join(run_dir, "matrix_corrections.json")
-    corrections = json.load(open(corr_path, encoding="utf-8"))
+    corrections = fsio.read_json(corr_path)
     identity = one_run_only(run_dir, corrections)
     copies = snapshot_inputs(run_dir)
     documents = documents_gate(run_dir)
@@ -316,11 +317,11 @@ def main():
     check = {}
     cpath = os.path.join(run_dir, "analysis_check.json")
     if os.path.exists(cpath):
-        check = json.load(open(cpath, encoding="utf-8"))
+        check = fsio.read_json(cpath)
     validation = {}
     vpath = os.path.join(run_dir, "validation_report.json")
     if os.path.exists(vpath):
-        validation = json.load(open(vpath, encoding="utf-8"))
+        validation = fsio.read_json(vpath)
 
     if check.get("result") == "not checked":
         raise SystemExit(

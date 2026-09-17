@@ -51,6 +51,7 @@ Usage:  python check_analysis.py <run_dir>
 Writes: <run_dir>/analysis_check.json
 """
 import os, sys, json, re, hashlib
+import fsio
 
 sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -90,13 +91,13 @@ def deterministic_rules(run_dir):
         return {}, ("this run kept no copy of the deterministic rules, so no check-item is "
                     "settled against the record here: the rules in the environment have "
                     "been corrected since and are not the rules this run was made under")
-    raw = open(path, "rb").read()
+    raw = fsio.read_bytes(path)
     now_hash = hashlib.sha256(raw).hexdigest()
     rules = json.loads(raw.decode("utf-8"))
     recorded = None
     mpath = os.path.join(run_dir, "manifest.json")
     if os.path.exists(mpath):
-        manifest = json.load(open(mpath, encoding="utf-8"))
+        manifest = fsio.read_json(mpath)
         recorded = (((manifest.get("document_checksums") or {})
                      .get("deterministic_rules")) or {}).get("sha256")
     if recorded is None:
@@ -123,7 +124,7 @@ def worksheet_for(run_dir):
 
 def worksheet_codes(path):
     codes = {}
-    for line in open(path, encoding="utf-8"):
+    for line in fsio.read_lines(path):
         m = re.match(r"^(\d{1,2}\.\d{1,2}) \| (\d{1,2}) \| (.+)$", line.strip())
         if m:
             codes[m.group(1)] = {"position": m.group(2), "obligation": m.group(3)}
@@ -151,19 +152,19 @@ def sources(run_dir):
     out = {}
     mpath = os.path.join(run_dir, "messages.jsonl")
     if os.path.exists(mpath):
-        for line in open(mpath, encoding="utf-8"):
+        for line in fsio.read_lines(mpath):
             if line.strip():
                 m = json.loads(line)
                 out[m["message_id"]] = ("message", m.get("text") or "")
     jpath = os.path.join(run_dir, "journal.jsonl")
     if os.path.exists(jpath):
-        for line in open(jpath, encoding="utf-8"):
+        for line in fsio.read_lines(jpath):
             if line.strip():
                 e = json.loads(line)
                 out[e["event_id"]] = ("journal event", json.dumps(e, ensure_ascii=False))
     spath = os.path.join(run_dir, "AI-receipt-section-II.json")
     if os.path.exists(spath):
-        rec = json.load(open(spath, encoding="utf-8"))
+        rec = fsio.read_json(spath)
 
         def rows_of(body):
             """The rows of a clause. Some clauses are one card (a dict of rows); clause 12,
@@ -274,7 +275,7 @@ def deterministic_phrase(rule, run_dir):
     mpath = os.path.join(run_dir, "messages.jsonl")
     if not os.path.exists(mpath):
         return "not established", None, "the message log is absent", False
-    for line in open(mpath, encoding="utf-8"):
+    for line in fsio.read_lines(mpath):
         if not line.strip():
             continue
         m = json.loads(line)
@@ -346,7 +347,7 @@ def main():
         raise SystemExit("no Analysis.json in %s: there is no analysis to check. Run "
                          "analyst.py over this purchase first." % run_dir)
     try:
-        analysis = json.load(open(apath, encoding="utf-8"))
+        analysis = fsio.read_json(apath)
     except ValueError as e:
         refuse(run_dir, run_id, "Analysis.json is not valid JSON", [str(e)[:300]])
 
@@ -354,7 +355,7 @@ def main():
         schema_path, schema_note = run_documents.resolve(run_dir, "analysis_schema")
     except run_documents.Missing as e:
         refuse(run_dir, run_id, "the run kept no analysis schema", [str(e)])
-    schema = json.load(open(schema_path, encoding="utf-8"))
+    schema = fsio.read_json(schema_path)
     violations = validate_schema(analysis, schema)
     if violations:
         refuse(run_dir, run_id, "Analysis.json is not valid against the schema", violations)
@@ -486,7 +487,7 @@ def main():
         "run_id": run_id,
         "result": "checked",
         "analysis_file": "Analysis.json",
-        "analysis_sha256": hashlib.sha256(open(apath, "rb").read()).hexdigest(),
+        "analysis_sha256": hashlib.sha256(fsio.read_bytes(apath)).hexdigest(),
         "schema": {"file": os.path.relpath(schema_path, run_dir),
                    "which": schema_note, "id": schema.get("$id"), "valid": True},
         "worksheet_read": {"file": os.path.basename(wpath), "which": wnote},

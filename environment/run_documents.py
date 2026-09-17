@@ -22,6 +22,7 @@ The order is fixed and there is no silent fallback:
                            exists to prevent.
 """
 import os
+import fsio
 
 NAMES = {
     "policy": "01_AI Policy.txt",
@@ -103,5 +104,5 @@ def provenance(run_dir):
                 out[key] = {"file": None, "which": str(e)}
     reason = os.path.join(run_dir, AS_ANALYSED, "why.txt")
     if os.path.exists(reason):
-        out["why_a_later_edition_is_used"] = open(reason, encoding="utf-8").read().strip()
+        out["why_a_later_edition_is_used"] = fsio.read_text(reason).strip()
     return out

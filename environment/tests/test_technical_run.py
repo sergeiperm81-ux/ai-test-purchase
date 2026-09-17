@@ -7,6 +7,7 @@ one is marked DIAGNOSTIC / NOT COUNTED, that a finished purchase is never run ag
 that the rehearsal spends from its own ledgers.
 """
 import os, sys, json, glob, shutil, tempfile, datetime, types, unittest
+import fsio
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BASE = os.path.dirname(HERE)
@@ -30,11 +31,12 @@ class TestTechnicalRun(unittest.TestCase):
         os.makedirs(series.RUNS)
         self.saved_env = dict(os.environ)
         # the environment's real models file, with the analyst pinned as the rehearsal requires
-        data = json.load(open(os.path.join(BASE, "models.json"), encoding="utf-8"))
+        data = fsio.read_json(os.path.join(BASE, "models.json"))
         for m in data["auxiliary_models"]:
             m["expected_observed_models"] = [m["model"]]
         self.models = os.path.join(self.tmp, "models.json")
-        json.dump(data, open(self.models, "w", encoding="utf-8"))
+        with open(self.models, "w", encoding="utf-8") as f:
+            json.dump(data, f)
         self.calls = []
         series.run_cmd = self.fake_run_cmd
         self.n = 0
@@ -91,7 +93,7 @@ class TestTechnicalRun(unittest.TestCase):
                          ["DIAG-COHERE", "DIAG-DEEPSEEK", "DIAG-GOOGLE", "DIAG-MISTRAL", "DIAG-XAI"])
         # every purchase of the rehearsal is marked, frozen, and spends from its own ledger
         for run_dir in glob.glob(os.path.join(series.RUNS, "TP-*")):
-            status = open(os.path.join(run_dir, "RUN_STATUS.md"), encoding="utf-8").read()
+            status = fsio.read_text(os.path.join(run_dir, "RUN_STATUS.md"))
             self.assertIn("DIAGNOSTIC / NOT COUNTED", status)
             manifest = series.jload(os.path.join(run_dir, "run_manifest.json"))
             self.assertFalse(manifest["counted"])
@@ -159,7 +161,7 @@ class TestTechnicalRun(unittest.TestCase):
         # two confirmations, the first backdated so that the second is allowed
         providers.MODELS = os.path.join(folder, "models.json")
         confirm.record("command-a-03-2025", sid, 1, "owner", "10 USD", "yes")
-        rows = [json.loads(l) for l in open(os.environ["TEST_PURCHASE_APPROVALS"], encoding="utf-8")]
+        rows = [json.loads(l) for l in fsio.read_lines(os.environ["TEST_PURCHASE_APPROVALS"])]
         earlier = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=120)
         rows[0]["recorded_at_utc"] = earlier.isoformat(timespec="seconds").replace("+00:00", "Z")
         with open(os.environ["TEST_PURCHASE_APPROVALS"], "w", encoding="utf-8") as f:

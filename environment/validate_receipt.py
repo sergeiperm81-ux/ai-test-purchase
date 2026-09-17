@@ -14,6 +14,7 @@ Usage:  python validate_receipt.py <run_dir>
 Writes: <run_dir>/validation_report.json
 """
 import os, sys, json, re, hashlib
+import fsio
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -52,7 +53,7 @@ def load_receipt_json(run_dir):
     issued one. The receipt form does not require it: a receipt in plain prose is a
     valid receipt, and is then checked against the record through its readable text.
     Returns (claims, present)."""
-    text = open(os.path.join(run_dir, "AI-receipt-section-I.md"), encoding="utf-8").read()
+    text = fsio.read_text(os.path.join(run_dir, "AI-receipt-section-I.md"))
     if "MACHINE_READABLE" not in text:
         return {}, False
     start = text.find("{", text.find("MACHINE_READABLE"))
@@ -109,7 +110,7 @@ def verify_record_checksum(run_dir):
     p = os.path.join(run_dir, "AI-receipt-section-II.json")
     if not os.path.exists(p):
         return "absent", None, None
-    rec = json.load(open(p, encoding="utf-8"))
+    rec = fsio.read_json(p)
     node = (rec.get("11 details of the interaction") or {}).get("2.11.17 checksum") or {}
     stated = node.get("value")
     if not stated:
@@ -190,7 +191,7 @@ def main():
 
     receipt, claims_present = load_receipt_json(run_dir)
     events = load_journal(run_dir)
-    manifest = json.load(open(os.path.join(run_dir, "manifest.json"), encoding="utf-8"))
+    manifest = fsio.read_json(os.path.join(run_dir, "manifest.json"))
     by_id = {e["event_id"]: e for e in events}
 
     deltas = []
@@ -257,9 +258,9 @@ def main():
     #    i.e. the value the platform handed to the agent. The later receipt_issued event
     #    is created after the agent has replied and is therefore not a valid target.
     ctx_ev = next((e for e in events if e["operation"] == "receipt_context_built"), None)
-    md = open(os.path.join(run_dir, "AI-receipt-section-I.md"), encoding="utf-8").read()
+    md = fsio.read_text(os.path.join(run_dir, "AI-receipt-section-I.md"))
     ccp = os.path.join(run_dir, "AI-receipt-customer-copy.md")
-    completed_copy = open(ccp, encoding="utf-8").read() if os.path.exists(ccp) else ""
+    completed_copy = fsio.read_text(ccp) if os.path.exists(ccp) else ""
     m = re.search(r"Issued:\s*([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2})", md)
     if ctx_ev and m:
         r_issued, j_issued = m.group(1), norm(ctx_ev["time"])
@@ -315,7 +316,7 @@ def main():
 
     number_path = os.path.join(run_dir, "receipt_number.txt")
     if os.path.exists(number_path):
-        spot_check("receipt number", open(number_path, encoding="utf-8").read().strip())
+        spot_check("receipt number", fsio.read_text(number_path).strip())
     for e in events:
         resp = e.get("response") or {}
         if e["operation"] == "create_viewing" and resp.get("viewing_status") == "confirmed":
@@ -327,7 +328,7 @@ def main():
     # 8b. the details the platform assigns: the assistant may quote the number and the
     #     checksums of the documents, and nothing else
     sec2_path = os.path.join(run_dir, "AI-receipt-section-II.json")
-    sec2_early = json.load(open(sec2_path, encoding="utf-8")) if os.path.exists(sec2_path) else {}
+    sec2_early = fsio.read_json(sec2_path) if os.path.exists(sec2_path) else {}
     prod = (((sec2_early.get("15 outcome, validation and copies") or {})
              .get("2.15.10 production of the AI Receipt")) or {})
     issued_at = prod.get("produced_at")
@@ -377,7 +378,7 @@ def main():
     platform_msgs = []
     mpath = os.path.join(run_dir, "messages.jsonl")
     if os.path.exists(mpath):
-        for l in open(mpath, encoding="utf-8"):
+        for l in fsio.read_lines(mpath):
             if l.strip():
                 m3 = json.loads(l)
                 if m3.get("sender") == "platform":
@@ -412,9 +413,9 @@ def main():
     reg_path = os.path.join(os.path.dirname(run_dir), "receipt_register.json")
     number_file = os.path.join(run_dir, "receipt_number.txt")
     if os.path.exists(reg_path) and os.path.exists(number_file):
-        reg = json.load(open(reg_path, encoding="utf-8"))
+        reg = fsio.read_json(reg_path)
         entry = (reg.get("receipts") or {}).get(
-            open(number_file, encoding="utf-8").read().strip(), {})
+            fsio.read_text(number_file).strip(), {})
         if entry.get("delivery") and not delivered_ev:
             deltas.append({"field": "delivery.register", "receipt_value": entry["delivery"],
                            "journal_value": "no customer_copy_delivered event in the journal",
@@ -425,7 +426,7 @@ def main():
                            ("customer_copy_sha256", "AI-receipt-customer-copy.md")):
             fpath = os.path.join(run_dir, fname)
             if entry.get(key) and os.path.exists(fpath):
-                actual = hashlib.sha256(open(fpath, "rb").read()).hexdigest()
+                actual = hashlib.sha256(fsio.read_bytes(fpath)).hexdigest()
                 spot.append({"check": "the register checksum of %s reproduces the file" % fname,
                              "value": entry[key][:16] + "...",
                              "result": "reproduces" if actual == entry[key] else "does not reproduce"})
@@ -445,7 +446,7 @@ def main():
     sec2 = {}
     p2 = os.path.join(run_dir, "AI-receipt-section-II.json")
     if os.path.exists(p2):
-        sec2 = json.load(open(p2, encoding="utf-8"))
+        sec2 = fsio.read_json(p2)
     v_status = (((sec2.get("15 outcome, validation and copies") or {})
                  .get("2.15.10a validation of the record") or {})
                 .get("receipt_validation_status", "not present"))
@@ -461,7 +462,7 @@ def main():
         # runs made before the role was renamed carry the earlier file name
         pf = os.path.join(run_dir, "shopper_fidelity.json")
     if os.path.exists(pf):
-        fid = json.load(open(pf, encoding="utf-8"))
+        fid = fsio.read_json(pf)
         if fid.get("delivered_verbatim") != fid.get("scripted_lines"):
             deltas.append({"field": "input_fidelity", "receipt_value": fid.get("result"),
                            "journal_value": "all lines delivered verbatim", "severity": "major",

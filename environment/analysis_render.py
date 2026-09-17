@@ -11,6 +11,7 @@ single finding.
 Usage: python analysis_render.py <run_dir>
 """
 import os, sys, json
+import fsio
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -105,7 +106,7 @@ def main():
     if len(sys.argv) < 2:
         raise SystemExit("usage: python analysis_render.py <run_dir>")
     run_dir = os.path.abspath(sys.argv[1])
-    a = json.load(open(os.path.join(run_dir, "Analysis.json"), encoding="utf-8"))
+    a = fsio.read_json(os.path.join(run_dir, "Analysis.json"))
     text = render(a)
     p = os.path.join(run_dir, "Analysis.md")
     with open(p, "w", encoding="utf-8", newline="") as f:

@@ -50,6 +50,7 @@ Usage:
   python series.py status
 """
 import os, sys, json, time, random, hashlib, argparse, datetime, subprocess, shutil, glob, secrets
+import fsio
 
 sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -102,7 +103,7 @@ def jdump(path, obj):
 
 
 def jload(path):
-    return json.load(open(path, encoding="utf-8"))
+    return fsio.read_json(path)
 
 
 def now():
@@ -241,7 +242,7 @@ def current_series():
     p = os.path.join(SERIES, "CURRENT")
     if not os.path.exists(p):
         raise SystemExit("no series planned: run series.py plan first")
-    sid = open(p, encoding="utf-8").read().strip()
+    sid = fsio.read_text(p).strip()
     return sid, os.path.join(SERIES, sid)
 
 
@@ -442,7 +443,7 @@ def registry(folder):
     p = registry_path(folder)
     if not os.path.exists(p):
         return []
-    return [json.loads(l) for l in open(p, encoding="utf-8") if l.strip()]
+    return [json.loads(l) for l in fsio.read_lines(p) if l.strip()]
 
 
 def record(folder, entry):
@@ -516,7 +517,7 @@ def measurement(run_dir, pl):
            "schema_sha256": req.get("schema_sha256")}
     for f in files:
         try:
-            data = json.load(open(f, encoding="utf-8"))
+            data = fsio.read_json(f)
         except Exception as e:
             return False, {"required": True, "why": "not valid JSON: %s" % os.path.basename(f)}
         missing = [k for k in req.get("required_keys", []) if k not in data]

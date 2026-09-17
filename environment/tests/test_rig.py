@@ -6,6 +6,7 @@ No paid call is made: every provider and NeoMundi are a local mock server.
 Run: python -m pytest tests -q      (or: python -m unittest discover tests)
 """
 import os, sys, json, glob, shutil, tempfile, subprocess, threading, datetime, unittest
+import fsio
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BASE = os.path.dirname(HERE)
@@ -154,7 +155,7 @@ class TestCallLog(RigCase):
         self.assertEqual(msg["content"], "ok")
         sent = self.mock.to("/oa/")[0]
         line = self.calls()[0]
-        saved = open(os.path.join(self.run_dir, line["request_file"]), "rb").read()
+        saved = fsio.read_bytes(os.path.join(self.run_dir, line["request_file"]))
         self.assertEqual(saved, sent["body"])
         self.assertEqual(line["request_sha256"], call_log.sha256_bytes(sent["body"]))
         self.assertEqual(json.loads(saved)["max_completion_tokens"], 100)
@@ -169,7 +170,7 @@ class TestCallLog(RigCase):
         def killed(url, headers, body, timeout):
             last = call_log.attempts(self.run_dir)[-1]
             seen["outcome"] = last["outcome"]
-            seen["same_bytes"] = open(os.path.join(self.run_dir, last["request_file"]), "rb").read() == body
+            seen["same_bytes"] = fsio.read_bytes(os.path.join(self.run_dir, last["request_file"])) == body
             raise RuntimeError("the process dies while the request is out")
 
         original, providers._send = providers._send, killed
@@ -299,7 +300,7 @@ class TestCallLog(RigCase):
         with self.assertRaises(SystemExit):                   # too soon after stage 1
             confirm.record("conf-model", "test-scope", 2, "owner", "0.001 USD", "yes again")
         path = os.environ["TEST_PURCHASE_APPROVALS"]
-        row = json.loads(open(path, encoding="utf-8").read())
+        row = json.loads(fsio.read_text(path))
         earlier = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=120)
         row["recorded_at_utc"] = earlier.isoformat(timespec="seconds").replace("+00:00", "Z")
         with open(path, "w", encoding="utf-8") as f:
@@ -441,7 +442,7 @@ class TestNeoMundi(RigCase):
 
     def test_the_observation_carries_no_identifiers_of_ours(self):
         self.observed_run()
-        saved = open(os.path.join(self.run_dir, "neomundi", "requests", "RUN-T.C0001.A1.json"), "rb").read()
+        saved = fsio.read_bytes(os.path.join(self.run_dir, "neomundi", "requests", "RUN-T.C0001.A1.json"))
         body = json.loads(saved)
         self.assertEqual(set(body), {"source_type", "mode", "llm_prompt", "llm_response", "raw_metrics"})
         self.assertEqual((body["source_type"], body["mode"]), ("llm", "OBS"))
@@ -456,7 +457,7 @@ class TestNeoMundi(RigCase):
         self.assertEqual([q["path"] for q in self.mock.to(self.CONTRACTS)],
                          [self.CONTRACTS + "nm-1"])
         line = [l for l in neomundi_client.links(self.run_dir) if l["status"] == "contract"][0]
-        raw = open(os.path.join(self.run_dir, line["contract_file"]), "rb").read()
+        raw = fsio.read_bytes(os.path.join(self.run_dir, line["contract_file"]))
         self.assertEqual(call_log.sha256_bytes(raw), line["contract_sha256"])
         self.assertEqual(json.loads(raw)["identity"]["request_id"], "nm-1")
 
@@ -491,7 +492,7 @@ class TestNeoMundi(RigCase):
         self.assertTrue(ok_, detail)
         self.assertEqual(len(self.mock.to("/oa/")), 1)
         sent = self.mock.to(self.GOVERN)[-1]
-        saved = open(os.path.join(self.run_dir, "neomundi", "requests", "RUN-T.C0001.A1.json"), "rb").read()
+        saved = fsio.read_bytes(os.path.join(self.run_dir, "neomundi", "requests", "RUN-T.C0001.A1.json"))
         self.assertEqual(sent["body"], saved)
 
     def test_one_to_one_is_enforced(self):
@@ -532,7 +533,7 @@ class TestNeoMundi(RigCase):
     def test_llm_prompt_must_be_the_exact_provider_request(self):
         self.observed_run()
         path = os.path.join(self.run_dir, "neomundi", "requests", "RUN-T.C0001.A1.json")
-        body = json.loads(open(path, "rb").read())
+        body = json.loads(fsio.read_bytes(path))
         body["llm_prompt"] = body["llm_prompt"].replace("x", "y")
         raw = json.dumps(body).encode("utf-8")
         with open(path, "wb") as f:
@@ -736,13 +737,22 @@ class TestSeriesRules(RigCase):
 
     def test_the_analyst_must_be_pinned_too(self):
         import series
-        data = json.load(open(providers.MODELS, encoding="utf-8"))
+        data = fsio.read_json(providers.MODELS)
         tested = [dict(m, expected_observed_models=[m["model"]]) for m in data["models"]
                   if m.get("max_output_tokens")]
         analyst = cfg("analyst-model", "oa:oa-model", self.mock.url, "/oa/v1")
         with self.assertRaises(SystemExit) as e:
             series.validate_configuration(dict(data, models=tested), tested + [analyst])
         self.assertIn("test/analyst-model", str(e.exception))
+
+    def test_the_analyst_smoke_fails_on_an_empty_or_cut_answer(self):
+        import smoke
+        self.assertTrue(smoke.analyst_answer_ok('{"ok": true}', "stop"))
+        self.assertFalse(smoke.analyst_answer_ok("", "length"))          # every token went to reasoning
+        self.assertFalse(smoke.analyst_answer_ok('{"ok": true}', "length"))
+        self.assertFalse(smoke.analyst_answer_ok("not json", "stop"))
+        self.assertFalse(smoke.analyst_answer_ok('{"ok": false}', "stop"))
+        self.assertFalse(smoke.analyst_answer_ok(None, "stop"))
 
     def test_smoke_takes_the_eight_configurations_only(self):
         import smoke
@@ -766,7 +776,7 @@ class TestFinalPatch(RigCase):
         self.assertEqual(call_log.spent(scope="test-scope")["USD"], state["reserved"])
 
     def smoke_configs(self, *names):
-        data = json.load(open(providers.MODELS, encoding="utf-8"))
+        data = fsio.read_json(providers.MODELS)
         return [m for m in data["models"] if m["model"] in names]
 
     def test_smoke_preflight_refuses_before_any_call(self):
@@ -792,7 +802,7 @@ class TestFinalPatch(RigCase):
 
     def test_declared_neomundi_configuration_is_what_the_run_freezes(self):
         import series
-        cfg = dict(json.load(open(providers.MODELS, encoding="utf-8"))["neomundi"], enabled=True)
+        cfg = dict(fsio.read_json(providers.MODELS)["neomundi"], enabled=True)
         path = os.path.join(self.tmp, "neomundi-config.json")
         series.jdump(path, cfg)
         pl = {"neomundi": {"required": True, "config_file": "neomundi-config.json",
@@ -812,7 +822,7 @@ class TestFinalPatch(RigCase):
         import smoke
         confirm.record("conf-model", "SMOKE-T", 1, "owner", "0.02 USD", "yes")
         ref = smoke.write_approvals(self.run_dir, self.smoke_configs("oa-model", "conf-model"), "SMOKE-T")
-        raw = open(os.path.join(self.run_dir, "approvals-at-start.json"), "rb").read()
+        raw = fsio.read_bytes(os.path.join(self.run_dir, "approvals-at-start.json"))
         self.assertEqual(ref["sha256"], call_log.sha256_bytes(raw))
         self.assertFalse(ref["confirmed"])
         self.assertEqual(list(json.loads(raw)), ["conf-model"])
@@ -833,7 +843,7 @@ class TestFinalPatch(RigCase):
 
 class TestRealConfiguration(unittest.TestCase):
     def setUp(self):
-        self.data = json.load(open(os.path.join(BASE, "models.json"), encoding="utf-8"))
+        self.data = fsio.read_json(os.path.join(BASE, "models.json"))
 
     def test_smoke_reservation_fits_its_ceiling(self):
         import smoke
@@ -882,7 +892,7 @@ class TestEndToEnd(RigCase):
         self.assertEqual(p.returncode, 0, p.stdout[-2000:] + p.stderr[-2000:])
         run_dir = glob.glob(os.path.join(env_dir, "runs", "TP-D01-A-*"))[0]
         calls = call_log.attempts(run_dir)
-        manifest = json.load(open(os.path.join(run_dir, "manifest.json"), encoding="utf-8"))
+        manifest = fsio.read_json(os.path.join(run_dir, "manifest.json"))
         self.assertEqual(len(calls), len(self.mock.to("/oa/")))
         self.assertEqual(len(calls), len(manifest["api_responses"]))
         self.assertTrue(all(c["outcome"] == "completed" for c in calls))
@@ -906,7 +916,7 @@ class TestEndToEnd(RigCase):
         c = subprocess.run([sys.executable, "cost.py", run_dir], cwd=env_dir, env=env,
                            capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(c.returncode, 0, c.stderr)
-        cost = json.load(open(os.path.join(run_dir, "cost.json"), encoding="utf-8"))
+        cost = fsio.read_json(os.path.join(run_dir, "cost.json"))
         expected = len(calls) * (2000 * 0.40 + 30 * 1.60) / 1e6
         self.assertAlmostEqual(cost["cost_computed_by_currency"]["USD"], expected, places=6)
         self.assertNotIn(SECRET.encode(), all_bytes(self.tmp))
@@ -922,7 +932,7 @@ class TestEndToEnd(RigCase):
         self.assertEqual(p.returncode, 3, p.stdout[-1500:] + p.stderr[-1500:])
         self.assertEqual(len(self.mock.to("/oa/")), 4)
         run_dir = glob.glob(os.path.join(env_dir, "runs", "TP-D01-B-*"))[0]
-        manifest = json.load(open(os.path.join(run_dir, "manifest.json"), encoding="utf-8"))
+        manifest = fsio.read_json(os.path.join(run_dir, "manifest.json"))
         self.assertTrue(manifest["closure_reason"].startswith("technical_failure"))
 
 

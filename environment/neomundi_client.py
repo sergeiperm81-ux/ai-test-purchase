@@ -39,6 +39,7 @@ Usage:
   python neomundi_client.py verify <run_dir>
 """
 import os, sys, json, time, base64, hashlib, urllib.request, urllib.error
+import fsio
 
 import call_log
 
@@ -111,7 +112,7 @@ def freeze_config(run_dir):
     if not os.path.exists(path):
         os.makedirs(_folder(run_dir), exist_ok=True)
         source = os.environ.get("TEST_PURCHASE_NEOMUNDI_CONFIG")
-        raw = open(source, "rb").read() if source else \
+        raw = fsio.read_bytes(source) if source else \
             json.dumps(providers.neomundi_config(), ensure_ascii=False, indent=1).encode("utf-8")
         with open(path, "xb") as f:
             f.write(raw)
@@ -128,7 +129,7 @@ def run_config(run_dir):
 
 def _config_sha(run_dir):
     path = os.path.join(_folder(run_dir), CONFIG_FILE)
-    return call_log.sha256_bytes(open(path, "rb").read()) if os.path.exists(path) else None
+    return call_log.sha256_bytes(fsio.read_bytes(path)) if os.path.exists(path) else None
 
 
 def url_for(cfg, path):
@@ -366,7 +367,7 @@ def flush(run_dir):
         if not os.path.exists(p):
             out[aid] = "no saved request"
             continue
-        raw = open(p, "rb").read()
+        raw = fsio.read_bytes(p)
         if call_log.sha256_bytes(raw) != s["hashes"].get("neomundi_request_sha256"):
             out[aid] = "the saved request no longer matches its checksum: not sent"
             continue
@@ -376,7 +377,7 @@ def flush(run_dir):
 
 def _file_sha(run_dir, rel):
     p = os.path.join(run_dir, rel or "")
-    return call_log.sha256_bytes(open(p, "rb").read()) if rel and os.path.isfile(p) else None
+    return call_log.sha256_bytes(fsio.read_bytes(p)) if rel and os.path.isfile(p) else None
 
 
 def _check_observation(run_dir, l, call, cfg_sha):
@@ -399,7 +400,7 @@ def _check_observation(run_dir, l, call, cfg_sha):
     if (l.get("provider_request_sha256"), l.get("provider_response_sha256")) != \
             (call["request_sha256"], call.get("response_sha256")):
         problems.append("%s: the link names other provider files than the call log" % aid)
-    body = json.loads(open(os.path.join(run_dir, rel), "rb").read())
+    body = json.loads(fsio.read_bytes(os.path.join(run_dir, rel)))
     if call_log.sha256_bytes(body.get("llm_prompt", "").encode("utf-8")) != call["request_sha256"]:
         problems.append("%s: llm_prompt is not the exact provider request" % aid)
     if call_log.sha256_bytes(body.get("llm_response", "").encode("utf-8")) != call.get("response_sha256"):
@@ -455,7 +456,7 @@ def _check_contract(run_dir, aid, contracts, request_id):
         return ["%s: interoperability contract missing or changed" % aid]
     if request_id and l.get("neomundi_request_id") != request_id:
         return ["%s: the contract belongs to another request_id" % aid]
-    contract = json.loads(open(os.path.join(run_dir, l["contract_file"]), "rb").read())
+    contract = json.loads(fsio.read_bytes(os.path.join(run_dir, l["contract_file"])))
     if (contract.get("identity") or {}).get("request_id") != l.get("neomundi_request_id"):
         return ["%s: the contract names another request_id than the observation" % aid]
     integ = contract_integrity(contract)
@@ -511,7 +512,7 @@ def verify_links(run_dir, roles=("agent",)):
     for aid, ls in contracts.items():
         p = os.path.join(run_dir, ls[0].get("contract_file") or "")
         if os.path.isfile(p):
-            integrity[aid] = contract_integrity(json.loads(open(p, "rb").read()))
+            integrity[aid] = contract_integrity(json.loads(fsio.read_bytes(p)))
     detail = {"completed_calls": len(completed), "observed": len(observed),
               "contracts": len(contracts), "problems": problems, "files": files,
               "config_at_start_sha256": cfg_sha,
@@ -539,8 +540,8 @@ def probe(run_dir, attempt_id):
                  if a["provider_attempt_id"] == attempt_id), None)
     if line is None or line["outcome"] != "completed":
         raise SystemExit("no completed attempt %s in this run" % attempt_id)
-    req = open(os.path.join(run_dir, line["request_file"]), "rb").read()
-    resp = open(os.path.join(run_dir, line["response_file"]), "rb").read()
+    req = fsio.read_bytes(os.path.join(run_dir, line["request_file"]))
+    resp = fsio.read_bytes(os.path.join(run_dir, line["response_file"]))
     return observe(run_dir, dict(line, role=cfg.get("observe_roles", ["agent"])[0]), req, resp)
 
 

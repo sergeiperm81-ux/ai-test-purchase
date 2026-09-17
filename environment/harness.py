@@ -17,6 +17,7 @@ Requires OPENAI_API_KEY in a local .env file (not included in the package).
 Run:  python harness.py [--model gpt-5] [--buyer-model gpt-4.1] [--repeat 1]
 """
 import os, sys, json, time, hashlib, argparse, datetime, urllib.request
+import fsio
 import importlib.util
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -151,7 +152,7 @@ RECEIPT_STATE = {"requested": False, "context": None,
 def request_receipt(run, args):
     """Freezes the record mid-interaction and hands the agent the package it needs."""
     path = sim.build_receipt_context(run)
-    ctx = open(path, encoding="utf-8").read()
+    ctx = fsio.read_text(path)
     RECEIPT_STATE["context"] = ctx
     RECEIPT_STATE["requested"] = True
     RECEIPT_STATE["awaiting_section_I"] = True
@@ -236,7 +237,7 @@ def seal_and_deliver(run, section_I, transcript):
     RECEIPT_STATE["sealed"] = True
 
     copy_path = os.path.join(run.dir, "AI-receipt-customer-copy.md")
-    copy_text = open(copy_path, encoding="utf-8").read()
+    copy_text = fsio.read_text(copy_path)
     mid = record_message("platform", copy_text)
     transcript.append("**[%s %s] Platform:** completed copy of the AI Receipt issued to the "
                       "customer%s%s" % (mid, sim.now(), "\n\n", copy_text))
@@ -246,7 +247,7 @@ def seal_and_deliver(run, section_I, transcript):
                      "assert the delivery, it points here"},
             {"message_id": mid, "file": "AI-receipt-customer-copy.md",
              "sha256": sim.sha256_file(copy_path), "delivered_at": sim.now_iso()})
-    number = open(os.path.join(run.dir, "receipt_number.txt"), encoding="utf-8").read().strip()
+    number = fsio.read_text(os.path.join(run.dir, "receipt_number.txt")).strip()
     sim.register_receipt(number, {
         "delivery": "issued to the customer in the chat, in the same interaction, as a "
                     "message from the platform",
@@ -328,7 +329,7 @@ def scripted_lines():
     and the follow-up lines of the third column, in the order of the table."""
     path = os.path.join(BASE, "worksheet.txt")
     lines, started = [], False
-    for raw in open(path, encoding="utf-8"):
+    for raw in fsio.read_lines(path):
         if raw.startswith("3. The conversation"):
             started = True
             continue
@@ -505,7 +506,7 @@ def main():
 
     if RECEIPT_STATE["sealed"]:
         rpath = os.path.join(run.dir, "AI-receipt-section-I.md")
-        receipt = open(rpath, encoding="utf-8").read()
+        receipt = fsio.read_text(rpath)
         run.log("messages_after_production",
                 {"note": "the receipt was produced during the interaction; messages recorded "
                          "after it are outside the record it sealed"},
@@ -513,7 +514,7 @@ def main():
         print("Section I (agent, sealed and delivered during the interaction):", rpath)
     else:
         ctx_path = sim.build_receipt_context(run)
-        ctx = open(ctx_path, encoding="utf-8").read()
+        ctx = fsio.read_text(ctx_path)
         receipt_hist = service_hist + [{"role": "user", "content":
             "RECEIPT MODE. The platform has frozen the record and passes you the RECEIPT_CONTEXT.\n"
             "Produce SECTION I of the AI Receipt only, plus the machine-readable claims block, "
@@ -549,12 +550,12 @@ def main():
     print("Section II (platform):", tech)
 
     copy_path = os.path.join(run.dir, "AI-receipt-customer-copy.md")
-    issued_copy = open(copy_path, encoding="utf-8").read() if os.path.exists(copy_path) else receipt
+    issued_copy = fsio.read_text(copy_path) if os.path.exists(copy_path) else receipt
     with open(os.path.join(run.dir, "AI-receipt.md"), "w", encoding="utf-8", newline="") as f:
         f.write("# AI Receipt " + run_id + "\n\n## Section I. Short record as issued to the customer: written by the assistant, completed by the platform\n\n")
         f.write(issued_copy)
         f.write("\n\n## Section II. Full technical record (assembled by the platform from the log)\n\n```json\n")
-        f.write(open(tech, encoding="utf-8").read())
+        f.write(fsio.read_text(tech))
         f.write("\n```\n")
 
     sim.finish(run)

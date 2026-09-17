@@ -25,6 +25,7 @@ Usage:
   python technical_run.py status
 """
 import os, sys, json, argparse, datetime, types
+import fsio
 
 sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -87,7 +88,7 @@ def oneoffs(folder):
     path = os.path.join(folder, "oneoffs.jsonl")
     if not os.path.exists(path):
         return []
-    return [json.loads(l) for l in open(path, encoding="utf-8") if l.strip()]
+    return [json.loads(l) for l in fsio.read_lines(path) if l.strip()]
 
 
 def oneoff_done(folder, configuration_id):

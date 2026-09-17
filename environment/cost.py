@@ -17,6 +17,7 @@ Usage:  python cost.py <run_dir> [more run dirs...]
 Writes: <run_dir>/cost.json for each run
 """
 import os, sys, json
+import fsio
 
 sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -66,7 +67,7 @@ def from_call_log(run_dir, rates):
 
 def legacy(run_dir, rates):
     """Runs made before the call log: usage in the manifest and the analyst file."""
-    manifest = json.load(open(os.path.join(run_dir, "manifest.json"), encoding="utf-8"))
+    manifest = fsio.read_json(os.path.join(run_dir, "manifest.json"))
     parts, total, unknown = {}, {}, []
     sources = [("service agent", manifest.get("api_responses") or [],
                 manifest.get("model_reported") or manifest.get("model_requested")),
@@ -74,7 +75,7 @@ def legacy(run_dir, rates):
                 manifest.get("buyer_model_requested"))]
     p = os.path.join(run_dir, "analyst_usage.jsonl")
     if os.path.exists(p):
-        calls = [json.loads(l) for l in open(p, encoding="utf-8") if l.strip()]
+        calls = [json.loads(l) for l in fsio.read_lines(p) if l.strip()]
         sources.append(("analyst", calls, calls[-1].get("model_reported") if calls else None))
     for name, entries, model in sources:
         part = {"models": [model], "attempts": len(entries), "cost": {}}
@@ -93,7 +94,7 @@ def legacy(run_dir, rates):
 
 def one(run_dir):
     rates = usage.load_rates()
-    manifest = json.load(open(os.path.join(run_dir, "manifest.json"), encoding="utf-8"))
+    manifest = fsio.read_json(os.path.join(run_dir, "manifest.json"))
     if os.path.exists(os.path.join(run_dir, "calls", "calls.jsonl")):
         parts, total, unknown = from_call_log(run_dir, rates)
         source = "calls/calls.jsonl: every attempt, failed and interrupted attempts included"

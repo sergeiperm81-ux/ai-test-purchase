@@ -9,6 +9,7 @@ the analyst's key, and the NeoMundi key when observations are enabled.
 Usage: python secrets_check.py [models.json]
 """
 import os, sys, json
+import fsio
 
 sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -19,7 +20,7 @@ import providers
 
 def main():
     path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(BASE, "models.json")
-    data = json.load(open(path, encoding="utf-8"))
+    data = fsio.read_json(path)
     names = []
 
     def need(n):
@@ -49,7 +50,7 @@ def main():
         print("%-30s %s" % (n, "present" if ok else "ABSENT"))
         missing += 0 if ok else 1
     gi = os.path.join(BASE, ".gitignore")
-    ignored = os.path.exists(gi) and ".env" in open(gi, encoding="utf-8").read()
+    ignored = os.path.exists(gi) and ".env" in fsio.read_text(gi)
     print(".env in .gitignore:", "yes" if ignored else "NO: fix this before anything is published")
     sys.exit(1 if missing else 0)
 

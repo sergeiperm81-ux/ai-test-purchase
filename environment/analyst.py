@@ -21,6 +21,7 @@ Output: Analysis.json and Analysis.md inside the run folder
 Run: python analyst.py [--run TP-...] [--model gpt-5] [--attempts 3] [--no-blind]
 """
 import os, sys, json, glob, argparse, re, datetime, hashlib
+import fsio
 
 sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -56,7 +57,7 @@ def manifest_for_analyst(run_dir):
     purchase (identifiers, timing, finish reason). Usage figures, cache fields and the call
     log summary are left out: their shape differs by provider and would tell the blinded
     analyst whose model it is judging."""
-    m = json.load(open(os.path.join(run_dir, "manifest.json"), encoding="utf-8"))
+    m = fsio.read_json(os.path.join(run_dir, "manifest.json"))
     for k in ("api_responses", "buyer_api_responses"):
         if isinstance(m.get(k), list):
             m[k] = [{f: r.get(f) for f in MANIFEST_CALL_FIELDS if f in r} for r in m[k]]
@@ -78,7 +79,7 @@ def blind_map(run_dir):
     in its place. The analyst measures behaviour against a declared standard; the name of
     the model must not be part of what it reads, or the comparison across models carries
     the analyst's expectations with it."""
-    m = json.load(open(os.path.join(run_dir, "manifest.json"), encoding="utf-8"))
+    m = fsio.read_json(os.path.join(run_dir, "manifest.json"))
     label = (m.get("series_tag") or "").split("-")[-1] or "X"
     tokens = set()
     for k in ("model_requested", "model_reported"):
@@ -120,7 +121,7 @@ def schema_for(run_dir):
         p, _ = run_documents.resolve(run_dir, "analysis_schema")
     except run_documents.Missing as e:
         raise SystemExit(str(e))
-    return json.load(open(p, encoding="utf-8")), p
+    return fsio.read_json(p), p
 
 
 def violations(obj, schema):
@@ -197,7 +198,7 @@ def extract_json(text):
 
 def worksheet_codes(path):
     codes = {}
-    for line in open(path, encoding="utf-8"):
+    for line in fsio.read_lines(path):
         m = re.match(r"^(\d{1,2}\.\d{1,2}) \| (\d{1,2}) \| (.+)$", line.strip())
         if m:
             codes[m.group(1)] = {"position": m.group(2), "obligation": m.group(3)}
@@ -233,7 +234,7 @@ def main():
     if cap is not None and a.attempts > cap:
         print("attempts limited to %d by the configuration" % cap)
         a.attempts = cap
-    run_manifest = json.load(open(os.path.join(run_dir, "manifest.json"), encoding="utf-8"))
+    run_manifest = fsio.read_json(os.path.join(run_dir, "manifest.json"))
     recorder = call_log.Recorder(run_dir, run_id, run_manifest.get("identifiers") or {},
                                  providers.limits())
 
@@ -298,7 +299,7 @@ def main():
     payload_sha = hashlib.sha256(payload_bytes).hexdigest()
     payload_name = "analysis-input.%s.txt" % payload_sha[:16]
     payload_path = os.path.join(run_dir, payload_name)
-    if os.path.exists(payload_path) and open(payload_path, "rb").read() != payload_bytes:
+    if os.path.exists(payload_path) and fsio.read_bytes(payload_path) != payload_bytes:
         raise SystemExit("the content-addressed analyst input already exists with different bytes")
     if not os.path.exists(payload_path):
         with open(payload_path, "wb") as f:

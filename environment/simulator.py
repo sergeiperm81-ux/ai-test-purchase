@@ -17,6 +17,7 @@ Run:  python simulator.py   (manual menu mode)
 The harness (harness.py) uses this module programmatically.
 """
 import sys, os, json, hashlib, datetime, shutil
+import fsio
 from zoneinfo import ZoneInfo
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -432,7 +433,7 @@ def receipt_number_for(run):
     One number per run: assigned on the first request and reused afterwards."""
     p = os.path.join(run.dir, "receipt_number.txt")
     if os.path.exists(p):
-        return open(p, encoding="utf-8").read().strip()
+        return fsio.read_text(p).strip()
     reg = _load_register()
     day = _now_dt().strftime("%Y%m%d")
     reg["counters"][day] = int(reg["counters"].get(day, 0)) + 1
@@ -460,7 +461,7 @@ def register_receipt(number, entry):
 
 def env_snapshot(run):
     """Identifier, version and checksum of the environment snapshot handed to the agent."""
-    raw = open(ETALON, encoding="utf-8").read() if os.path.exists(ETALON) else ""
+    raw = fsio.read_text(ETALON) if os.path.exists(ETALON) else ""
     return {"snapshot_id": "ENV-" + short_hash(VERSIONS["env"], str(len(raw))),
             "version": VERSIONS["env"],
             "source_file": "reference_state.json",
@@ -487,7 +488,7 @@ def message_index(run):
     if not os.path.exists(mpath):
         return ""
     rows = []
-    for line in open(mpath, encoding="utf-8"):
+    for line in fsio.read_lines(mpath):
         if line.strip():
             m = json.loads(line)
             who = "customer" if m.get("sender") == "customer" else "AI"
@@ -507,7 +508,7 @@ def build_receipt_context(run):
     st = run.load_state()
     with open(run.manifest_path, encoding="utf-8") as f:
         manifest = json.load(f)
-    journal = open(run.journal_path, encoding="utf-8").read() if os.path.exists(run.journal_path) else ""
+    journal = fsio.read_text(run.journal_path) if os.path.exists(run.journal_path) else ""
     receipt_id = receipt_number_for(run)
     snap = env_snapshot(run)
     docs = manifest.get("document_checksums", {})
