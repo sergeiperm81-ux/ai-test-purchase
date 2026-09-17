@@ -1,6 +1,6 @@
 {
  "what_this_is": "The configurations of the series and how each is reached: configuration_id, provider, endpoint, protocol, the NAME of the environment variable holding its key, the rate_key it is priced by, the output limit and the model ids the provider is expected to report. Keys never appear here. The list is fixed at the plan of the series; series.py refuses any configuration, the analyst's included, whose observed model ids are not pinned.",
- "version": "1.0-rc3, 17.09.2026: observed model ids of the 8 tested configurations pinned from the setup checks of 15 and 17 September; the analyst is not pinned yet",
+ "version": "1.0-rc4, 17.09.2026: observed model ids of all nine configurations pinned from the setup checks of 15 and 17 September (eight tested models and the analyst)",
  "pilot": {
   "pilot_id": "NEOMUNDI-AIBUSINESS-TP-2026",
   "scenario_id": "MARINA-KEYS-VIEWING-2026-09"
@@ -191,8 +191,10 @@
    "key_env": "PILOT_OPENAI_API_KEY",
    "max_output_tokens": 32000,
    "max_tokens_param": "max_completion_tokens",
-   "expected_observed_models": null,
-   "observed_models_provenance": "not yet observed: one setup call of the analyst is still to be made"
+   "expected_observed_models": [
+    "gpt-5-mini-2025-08-07"
+   ],
+   "observed_models_provenance": "reported by the provider in the setup check SMOKE-ANALYST-20260917 (one recorded call, calls/calls.jsonl of that run)"
   }
  ],
  "roles": {
