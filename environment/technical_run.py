@@ -111,6 +111,15 @@ def run_oneoffs(sid, folder, pl, d, override, dry):
         if dry:
             print("  one-off %s -> %s (dry run, nothing executed)" % (cid, m["model"]))
             continue
+        window = pl.get("window_utc")
+        if window and not override and not series.in_window(window):
+            _append(os.path.join(folder, "oneoffs.jsonl"),
+                    {"series": sid, "day": d["day"], "date": d["date"], "configuration_id": cid,
+                     "model": m["model"], "run_id": None, "status": "not_started",
+                     "note": "the UTC window %s of the plan is closed" % window,
+                     "recorded_at": series.now()})
+            print("  one-off %s not started: the UTC window %s is closed" % (cid, window))
+            continue
         ids = {"TEST_PURCHASE_SERIES_ID": sid, "TEST_PURCHASE_DAY_ID": "D%02d" % d["day"],
                "TEST_PURCHASE_PURCHASE_ID": "%s.%s" % (sid, tag), "TEST_PURCHASE_BUDGET_SCOPE": sid}
         ids.update(ledger_env(sid))
@@ -140,19 +149,94 @@ def _append(path, obj):
         f.write(json.dumps(obj, ensure_ascii=False) + "\n")
 
 
+def preflight_all(sid, folder):
+    """Before the first external call of a day: every configuration the day may reach, the
+    three of the series and the five one-offs alike, has its key, its product id, a rate,
+    and, where required, both confirmations for this scope. One thing missing means zero
+    calls, not six purchases and then a stop at the seventh."""
+    import providers, confirm, usage
+    providers.MODELS = os.path.join(folder, "models.json")     # the frozen file of the rehearsal
+    data = series.jload(providers.MODELS)
+    problems = []
+    for m in data["models"] + data.get("auxiliary_models", []):
+        cid = m.get("configuration_id", m["model"])
+        for env in (m.get("key_env"), m.get("product_id_env")):
+            if env and not providers.key_present(env):
+                problems.append("%s: %s is absent" % (cid, env))
+        if usage.rate(m.get("rate_key")) is None:
+            problems.append("%s: no rate for %s" % (cid, m.get("rate_key")))
+        if m.get("confirmation_required"):
+            ok, detail = confirm.status(m["model"], sid)
+            if not ok:
+                problems.append("%s: %s" % (cid, detail))
+    if problems:
+        raise SystemExit("the rehearsal is not ready; nothing was sent: " + "; ".join(problems))
+
+
+def day_stopped(folder, day_no):
+    """The status that stopped the series part of the day, or None."""
+    for e in series.registry(folder):
+        if e.get("day") == day_no and e.get("status") in series.STOP_DAY:
+            return e["status"]
+    return None
+
+
 def day(a):
     sid, folder = series.current_series()
     if not sid.startswith("TECH-"):
         raise SystemExit("the current series %s is not a technical rehearsal" % sid)
     pl = series.jload(os.path.join(folder, "plan.json"))
     os.environ.update(ledger_env(sid))
+    os.environ["TEST_PURCHASE_BUDGET_SCOPE"] = sid
+    if not a.dry:
+        preflight_all(sid, folder)
     ns = types.SimpleNamespace(day=a.day, date=None, only=None, dry=a.dry, override=a.override)
     series.day(ns)
     if a.day == ONEOFF_DAY:
         d = next(x for x in pl["schedule"] if x["day"] == a.day)
         override = series.date_override(d, a.override)
-        print("one-off purchases of day %d:" % a.day)
-        run_oneoffs(sid, folder, pl, d, override, a.dry)
+        stopped = day_stopped(folder, a.day)
+        if stopped:
+            print("one-off purchases not started: the series part of the day stopped with %s" % stopped)
+        else:
+            print("one-off purchases of day %d:" % a.day)
+            run_oneoffs(sid, folder, pl, d, override, a.dry)
+    if not a.dry:
+        rehearsal_anchor(sid, folder, pl)
+
+
+def rehearsal_anchor(sid, folder, pl):
+    """One anchor over the whole rehearsal: the run manifest and the freeze manifest of
+    every purchase, the three-by-two of the series and the five one-offs alike. Final once
+    all eleven are frozen; provisional until then, and written again as things complete."""
+    expected = len(pl["schedule"]) * len(pl["labels"]) + len(
+        [m for m in series.jload(os.path.join(folder, "models.json"))["auxiliary_models"]
+         if m["model"] != pl["analyst_model"]])
+    runs = {}
+    for e in series.registry(folder):
+        if e.get("status") in series.COMPLETE and e.get("run_id"):
+            runs["D%02d-%s" % (e["day"], e["label"])] = e
+    for e in oneoffs(folder):
+        if e.get("status") in series.COMPLETE and e.get("run_id"):
+            runs["D%02d-ONEOFF-%s" % (e["day"], e["configuration_id"])] = e
+    pinned, unfrozen = {}, []
+    for key, e in sorted(runs.items()):
+        run_dir = os.path.join(series.RUNS, e["run_id"])
+        entry = {"run_id": e["run_id"], "status": e["status"]}
+        for name in ("run_manifest.json", "freeze_manifest.json"):
+            p = os.path.join(run_dir, name)
+            entry[name] = series.sha256_file(p) if os.path.exists(p) else None
+        if e["status"] != "frozen" or not entry["freeze_manifest.json"]:
+            unfrozen.append(key)
+        pinned[key] = entry
+    out = {"what_this_is": "the anchor of the technical rehearsal: DIAGNOSTIC, NOT COUNTED. It "
+                           "pins the run manifest and the freeze manifest of every purchase of "
+                           "the rehearsal, the series purchases and the one-offs alike",
+           "series": sid, "counted": False, "purchases_expected": expected,
+           "purchases_complete": len(pinned), "unfrozen": unfrozen, "runs": pinned}
+    complete = len(pinned) == expected and not unfrozen
+    series.write_anchor(folder, "%s.rehearsal" % sid, out, final=complete)
+    return out
 
 
 def status(a):

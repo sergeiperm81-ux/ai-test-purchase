@@ -641,6 +641,22 @@ class TestNeoMundi(RigCase):
                          ["observed", "contract_pending"])
         self.assertEqual(neomundi_client.requests_made(run_id="RUN-T"), 1)
 
+    def test_a_purchase_of_twenty_calls_fits_under_the_purchase_cap(self):
+        # 20 observations and 20 contracts: 40 requests, under the cap of 50 set for a purchase
+        self.use_models(neomundi={"enabled": True, "max_requests_per_purchase": 50,
+                                  "max_requests_per_scope": 500})
+        self.mock.route("/oa/", ok(openai_body()))
+        self.neomundi_up()
+        rec = self.recorder()
+        for _ in range(20):
+            self.chat(rec=rec)
+        self.assertEqual(len(self.mock.to(self.GOVERN)), 20)
+        self.assertEqual(len(self.mock.to(self.CONTRACTS)), 20)
+        self.assertEqual(neomundi_client.requests_made(run_id="RUN-T"), 40)
+        ok_, detail = neomundi_client.verify_links(self.run_dir)
+        self.assertTrue(ok_, detail["problems"][:3])
+        self.assertEqual((detail["observed"], detail["contracts"]), (20, 20))
+
     def test_without_caps_nothing_is_sent(self):
         self.use_models(neomundi={"enabled": True, "max_requests_per_scope": None})
         self.mock.route("/oa/", ok(openai_body()))

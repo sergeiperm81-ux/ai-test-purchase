@@ -38,9 +38,9 @@
   "max_attempts": 3,
   "timeout_s": 60,
   "identifiers_field": null,
-  "note": "Confirmed by NeoMundi on 16.09.2026: OBS mode, one observation per completed service-agent call; failed calls stay in our log; the analyst is outside this population; our identifiers stay on our side and are tied to the observation by its request_id and its signed interoperability contract. Enabled once one live observation has been captured and its response schema declared in the plan of the series. Every outgoing request, observation or contract, successful or not, counts against max_requests_per_scope and max_requests_per_purchase; the count is reserved before sending. At the cap the purchase keeps running, the model is never re-called, and the purchase ends pending_measurement instead of frozen.",
-  "max_requests_per_scope": 250,
-  "max_requests_per_purchase": 25
+  "note": "Confirmed by NeoMundi on 16.09.2026: OBS mode, one observation per completed service-agent call; failed calls stay in our log; the analyst is outside this population; our identifiers stay on our side and are tied to the observation by its request_id and its signed interoperability contract. Enabled once one live observation has been captured and its response schema declared in the plan of the series. A purchase of about 20 agent calls makes about 40 requests (20 observations, 20 contracts), up to about 80 with retries; 50 per purchase and 500 per scope are set accordingly. Every outgoing request, observation or contract, successful or not, counts against max_requests_per_scope and max_requests_per_purchase; the count is reserved before sending. At the cap the purchase keeps running, the model is never re-called, and the purchase ends pending_measurement instead of frozen.",
+  "max_requests_per_scope": 500,
+  "max_requests_per_purchase": 50
  },
  "models": [
   {
