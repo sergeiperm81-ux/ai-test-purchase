@@ -336,6 +336,10 @@ def _send(run_dir, attempt_id, request_bytes, cfg, hashes):
             open_breaker(run_dir, "HTTP %d on %s: %s" % (status, attempt_id, detail))
             return "invalid_request"
         if status is not None and status not in RETRYABLE:
+            if 400 <= status < 500:
+                # not the body but the address or the key: the same answer for every body
+                open_breaker(run_dir, "HTTP %d on the observation of %s: %s"
+                             % (status, attempt_id, (body or b"")[:300].decode("utf-8", "replace")))
             break
         if t < tries:
             time.sleep(min(5 * t, 30) * scale)
@@ -369,6 +373,11 @@ def fetch_contract(run_dir, attempt_id, request_id, cfg, hashes, key=None):
             json.loads(body)
         except ValueError:
             ok, error = False, "the contract is not JSON"
+    if status is not None and 400 <= status < 500 and status not in RETRYABLE:
+        # a wrong contract address or format answers the same for every contract of the
+        # round: the breaker opens exactly as it does for an observation
+        open_breaker(run_dir, "HTTP %d on the contract of %s: %s"
+                     % (status, attempt_id, (body or b"")[:300].decode("utf-8", "replace")))
     entry = dict(hashes, **{"provider_attempt_id": attempt_id, "at_utc": call_log.utc_iso(),
                             "neomundi_request_id": request_id, "http_status": status,
                             "error": error, "status": "contract" if ok else "contract_pending"})

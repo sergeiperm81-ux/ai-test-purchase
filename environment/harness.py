@@ -51,6 +51,10 @@ def stop_of(e):
 
 BOTS = sim.BOTS
 RUNS = sim.RUNS
+# purchaser turns, scripted lines and fixed answers together. The dialogue ends when the last
+# scripted line is answered; this cap is the guard behind it and is part of the scenario as
+# run, so it changes only with the methodology, not with a bug fix
+DEFAULT_MAX_TURNS = 22
 
 def read(name):
     with open(os.path.join(BOTS, name), encoding="utf-8") as f:
@@ -411,9 +415,10 @@ def main():
     ap.add_argument("--repeat", default="1")
     ap.add_argument("--tag", default=None,
                     help="series tag, e.g. D01-A: goes into the run identifier")
-    ap.add_argument("--max-turns", type=int, default=30,
-                    help="purchaser turns, scripted lines and fixed answers together; the real "
-                         "guard against a loop is max_model_calls_per_purchase and the spend ceiling")
+    ap.add_argument("--max-turns", type=int, default=DEFAULT_MAX_TURNS,
+                    help="purchaser turns, scripted lines and fixed answers together; the dialogue "
+                         "ends when the last scripted line is answered, and the real guard against "
+                         "a loop is max_model_calls_per_purchase and the spend ceiling")
     a = ap.parse_args()
 
     os.makedirs(RUNS, exist_ok=True)

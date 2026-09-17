@@ -613,6 +613,38 @@ class TestNeoMundi(RigCase):
         self.assertEqual(len(self.mock.to(self.GOVERN)), 1)
         self.assertEqual(neomundi_client.links(self.run_dir)[-1]["status"], "circuit_open")
 
+    def test_an_unrecoverable_4xx_on_a_contract_opens_the_breaker_too(self):
+        # a wrong contract address answers 404 for every contract of the round
+        self.use_models(neomundi={"enabled": True})
+        self.mock.route("/oa/", ok(openai_body()))
+        self.mock.route(self.GOVERN, ok({"request_id": "nm-1", "mode": "OBS",
+                                         "governance": {"decision": "ALLOW"}}))
+        self.mock.route(self.CONTRACTS, (404, {}, b"not found"))
+        rec = self.recorder()
+        self.chat(rec=rec)
+        self.assertEqual([l["status"] for l in neomundi_client.links(self.run_dir)],
+                         ["observed", "contract_pending"])
+        opened = neomundi_client.breaker_open("test-scope")
+        self.assertIn("HTTP 404 on the contract of RUN-T.C0001.A1", opened["reason"])
+        self.chat(rec=rec)
+        self.assertEqual(len(self.mock.to(self.GOVERN)), 1)
+        self.assertEqual(neomundi_client.links(self.run_dir)[-1]["status"], "circuit_open")
+        # a rate limit on a contract is not unrecoverable: no breaker
+        neomundi_client.reset_breaker("test-scope")
+        self.mock.route(self.CONTRACTS, (429, {}, b"slow down"))
+        self.chat(rec=rec)
+        self.assertIsNone(neomundi_client.breaker_open("test-scope"))
+
+    def test_a_rejected_key_on_an_observation_opens_the_breaker(self):
+        self.use_models(neomundi={"enabled": True})
+        self.mock.route("/oa/", ok(openai_body()))
+        self.mock.route(self.GOVERN, (401, {}, b"bad key"))
+        self.chat()
+        self.assertEqual(len(self.mock.to(self.GOVERN)), 1)
+        self.assertEqual(neomundi_client.links(self.run_dir)[-1]["status"], "pending")
+        self.assertIn("HTTP 401 on the observation of RUN-T.C0001.A1",
+                      neomundi_client.breaker_open("test-scope")["reason"])
+
     def test_an_observation_without_a_request_id_is_a_problem(self):
         self.use_models(neomundi={"enabled": True})
         self.mock.route("/oa/", ok(openai_body()))

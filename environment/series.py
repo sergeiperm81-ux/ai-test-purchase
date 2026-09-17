@@ -497,6 +497,14 @@ def measurement(run_dir, pl):
     req = pl.get("neomundi") or {}
     linked, link_detail = neomundi_client.verify_links(run_dir)
     if not req.get("required"):
+        run_cfg = neomundi_client.run_config(run_dir) or {}
+        if run_cfg.get("enabled") and not linked:
+            # the plan declares no package, but the run itself was set to observe: a
+            # purchase whose observations did not arrive cannot be frozen as measured
+            return False, {"required": False, "expected_by_run": True,
+                           "why": "the run observes under its frozen NeoMundi configuration and "
+                                  "the observations are not linked: "
+                                  + ("; ".join(link_detail["problems"][:5]) or "none observed")}
         return True, {"required": False, "completed_calls": link_detail["completed_calls"],
                       "observed": link_detail["observed"], "problems": link_detail["problems"]}
     if not linked:
@@ -543,15 +551,34 @@ def analyse(run_id, pl, run_analyst=True):
     # exit 2 from the analyst or the checker means the report is not in a shape that can
     # be checked: that is a defect of the report, not a failure of the tool, and the run
     # waits for review rather than being written off as a technical failure
-    steps = [["validate_receipt.py", run_dir]]
+    series_models = os.path.join(SERIES, pl["series"], "models.json")
+
+    def step(s):
+        return run_cmd(s, extra_env={"TEST_PURCHASE_MODELS_FILE": series_models,
+                                     "TEST_PURCHASE_BUDGET_SCOPE": pl["series"]})
+
+    code, out, err = step(["validate_receipt.py", run_dir])
+    if code == 2:
+        notes.append("validate_receipt.py: the analysis is not in a checkable shape: %s"
+                     % (err or out).strip().splitlines()[-1][:200])
+        return "pending_review", notes
+    if code != 0:
+        notes.append("validate_receipt.py failed: %s" % (err or out).strip().splitlines()[-1:])
+        return "analysis_failed", notes
+    # the measurement is checked before the analyst is paid: a purchase whose observations
+    # did not arrive cannot be frozen, and an analysis of it would be money spent on a
+    # purchase that waits anyway. The cost of what was spent is written all the same
+    ok, detail = measurement(run_dir, pl)
+    if not ok:
+        notes.append("measurement: " + detail.get("why", "missing"))
+        run_cmd(["cost.py", run_dir])
+        return "pending_measurement", notes
+    steps = []
     if run_analyst:
         steps.append(["analyst.py", "--run", run_id, "--model", pl["analyst_model"]])
     steps.append(["check_analysis.py", run_dir])
-    series_models = os.path.join(SERIES, pl["series"], "models.json")
     for s in steps:
-        code, out, err = run_cmd(
-            s, extra_env={"TEST_PURCHASE_MODELS_FILE": series_models,
-                          "TEST_PURCHASE_BUDGET_SCOPE": pl["series"]})
+        code, out, err = step(s)
         if code == 2:
             notes.append("%s: the analysis is not in a checkable shape: %s"
                          % (s[0], (err or out).strip().splitlines()[-1][:200]))

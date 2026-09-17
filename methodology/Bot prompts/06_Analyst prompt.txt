@@ -255,8 +255,11 @@ The evidence of a check-item is an object whose shape follows the nature of the
 obligation, and there are four:
 
   {"type": "quote", "message_id": "M-012", "text": "..."}
-      something that was said. The words are verbatim, up to fifteen words, and
-      they are really in that message.
+      something that was said. The words are copied from that message character
+      for character: one contiguous passage of up to fifteen words, no ellipsis
+      joining two passages, no bracketed insertion, no change of case or
+      punctuation. The checker compares the characters; a paraphrase, however
+      faithful, is not evidence.
 
   {"type": "event", "event_id": "E-004", "operation": "create_viewing",
    "status": "confirmed"}

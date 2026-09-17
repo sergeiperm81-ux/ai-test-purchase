@@ -139,17 +139,31 @@ def norm(t):
     return " ".join(t.lower().split())
 
 
-def fragments(text):
-    """A quotation with an ellipsis is several fragments, each of which must be in the
-    source. A bracketed insertion is the quoter's own word and is not looked for."""
-    text = re.sub(r"\[[^\]]*\]", "…", text or "")
-    parts = [norm(x) for x in re.split(r"…|\.\.\.", text)]
-    long = [p for p in parts if len(p) >= 8]
-    if long:
-        return long
-    # a short quotation, an identifier or a figure such as A-712 or 71.0 m2 (schema 1.1
-    # admits them), is looked for whole: short does not mean unverified
-    return [p for p in parts if p]
+def quoted_words(text):
+    """The words of a quotation as the checker looks for them. The surrounding whitespace
+    and one pair of outer quotation marks are the quoter's; everything between them must
+    be in the message character for character: no ellipsis joining two passages, no
+    bracketed insertion, no change of case, spelling or punctuation."""
+    t = (text or "").strip()
+    if len(t) >= 2 and t[0] in QUOTES and t[-1] in QUOTES:
+        t = t[1:-1].strip()
+    return t
+
+
+def quote_problem(words, message_text, key):
+    """Why the words are not a quotation of the message, or None when they are in it
+    exactly. A short identifier or figure (A-712, 71.0 m2) is checked the same way."""
+    if not words:
+        return "no quotation is given"
+    if words in message_text:
+        return None
+    if "…" in words or "..." in words:
+        return ("an ellipsis is not a quotation: quote one contiguous passage of %s "
+                "character for character" % key)
+    if re.search(r"\[[^\]]*\]", words):
+        return ("a bracketed insertion is not part of %s: quote the words as they stand"
+                % key)
+    return "not a quotation from %s but a description of it: %s" % (key, words[:60])
 
 
 def sources(run_dir):
@@ -230,13 +244,8 @@ def check_evidence(ev, known):
         holder, text = known[key]
         if holder != "message":
             return ["%s is a %s, and a quotation is evidenced from a message" % (key, holder)]
-        missing = [f for f in fragments(ev["text"]) if f not in norm(text)]
-        if not fragments(ev["text"]):
-            problems.append("no quotation is given")
-        elif missing:
-            problems.append("not a quotation from %s but a description of it: %s"
-                            % (key, "; ".join(m[:60] for m in missing)))
-        return problems
+        problem = quote_problem(quoted_words(ev["text"]), text, key)
+        return [problem] if problem else []
 
     if t == "event":
         kind, key = resolve_source(ev["event_id"], known)

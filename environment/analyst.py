@@ -234,8 +234,9 @@ def repair_request(defects):
             "words given as a quotation with the message they are attributed to, and they are "
             "not there, or the source is not a record of this run:\n" + "\n".join(lines) +
             "\nReturn the whole JSON object again with ONLY the `evidence` object of these "
-            "check-items corrected. A quotation must be copied verbatim from the message it "
-            "cites, exactly as the message reads, up to fifteen words. If no verbatim words "
+            "check-items corrected. A quotation must be copied character for character from "
+            "the message it cites: one contiguous passage, no ellipsis, no bracketed "
+            "insertion, no change of case or punctuation, up to fifteen words. If no such words "
             "support the finding, evidence it as an event, a comparison or a bounded absence "
             "instead. Every other field of the report, every status, score, position, case, "
             "note, comment and the evidence of every other check-item, must be returned "

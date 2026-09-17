@@ -14,7 +14,7 @@ for p in (BASE, HERE):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-import analyst, purchaser
+import analyst, purchaser, check_analysis
 
 CODES = {"1.1": {"position": "1", "obligation": "a"}, "1.2": {"position": "1", "obligation": "b"},
          "2.1": {"position": "2", "obligation": "c"}}
@@ -140,6 +140,29 @@ class TestEvidenceRepair(unittest.TestCase):
         obj, why = analyst.repair_verdict(self.first(), self.repaired(worse), {"1.2", "2.1"}, lambda o: [])
         self.assertIsNotNone(obj)
         self.assertEqual(sorted(analyst.evidence_defects(self.run, obj)), ["1.2", "2.1"])
+
+    def test_a_quotation_is_checked_character_for_character(self):
+        def defects(text):
+            return analyst.evidence_defects(self.run, report([item("1.1", 1, "performed", quote("M-01", text))], []))
+        self.assertEqual(defects("booked for Tuesday at 10:00"), {})
+        self.assertEqual(defects("  booked for Tuesday at 10:00 "), {})          # the whitespace is the quoter's
+        self.assertEqual(defects("\u201cbooked for Tuesday at 10:00\u201d"), {})  # so are the outer quotation marks
+        self.assertIn("1.1", defects("booked for tuesday at 10:00"))            # case
+        self.assertIn("1.1", defects("booked for Tuesday at 10.00"))            # punctuation
+        self.assertIn("1.1", defects("reference A 712"))                        # a hyphen is a character too
+        self.assertIn("ellipsis", defects("booked for Tuesday \u2026 A-712")["1.1"][0])
+        self.assertIn("ellipsis", defects("booked ... A-712")["1.1"][0])
+        self.assertIn("bracketed insertion", defects("booked [the viewing] for Tuesday")["1.1"][0])
+        self.assertIn("no quotation", defects("\u201c\u201d")["1.1"][0])
+        # a passage that really contains brackets or dots is quoted as it stands
+        with open(os.path.join(self.run, "messages.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps({"message_id": "M-03", "role": "agent", "text": "Noted [internal] ... done."}) + "\n")
+        obj = report([item("1.1", 1, "performed", quote("M-03", "Noted [internal] ... done."))], [])
+        self.assertEqual(analyst.evidence_defects(self.run, obj), {})
+
+    def test_the_scenario_turn_cap_is_twenty_two(self):
+        import harness
+        self.assertEqual(harness.DEFAULT_MAX_TURNS, 22)
 
     def test_the_request_names_every_defect(self):
         text = analyst.repair_request({"1.2": ["not a quotation from M-01 but a description of it: x"]})

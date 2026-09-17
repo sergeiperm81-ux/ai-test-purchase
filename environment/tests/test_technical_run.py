@@ -66,7 +66,16 @@ class TestTechnicalRun(unittest.TestCase):
                          {"run_id": run_id, "model_requested": model, "model_reported": model,
                           "provider": {"provider": "stub"}})
             if self.trip_after == self.n:
-                # what the client does on the first body NeoMundi cannot accept
+                # what the client does on the first body NeoMundi cannot accept: the run
+                # observes under its frozen configuration, the observation is refused and
+                # the breaker opens
+                os.makedirs(os.path.join(run_dir, "neomundi"))
+                series.jdump(os.path.join(run_dir, "neomundi", "config-at-start.json"), {"enabled": True})
+                with open(os.path.join(run_dir, "neomundi", "links.jsonl"), "w", encoding="utf-8") as f:
+                    f.write(json.dumps({"provider_attempt_id": run_id + ".C0001.A1", "status": "oversize",
+                                        "llm_prompt_chars": 125000, "error": "the limit is 10000"}) + "\n")
+                    f.write(json.dumps({"provider_attempt_id": run_id + ".C0002.A1", "status": "observed",
+                                        "neomundi_request_id": "nm-x"}) + "\n")
                 neomundi_client.open_breaker(run_dir, "oversize on %s.C0001.A1: llm_prompt is "
                                              "125000 characters, the limit is 10000" % run_id)
             return 0, "Run:    %s\n" % run_id, ""
@@ -124,6 +133,16 @@ class TestTechnicalRun(unittest.TestCase):
         self.assertIn("technical-%s-neomundi" % sid, neomundi_client.breaker_path(sid))
         held = [e for e in series.registry(folder) if e["status"] == "not_started"]
         self.assertEqual(len(held), 5)
+        # the tripped purchase is not analysed: the measurement is checked before the
+        # analyst is paid, and its cost is written all the same
+        tripped = [e for e in series.registry(folder) if e["status"] == "pending_measurement"]
+        self.assertEqual(len(tripped), 1)
+        self.assertIn("observations are not linked", tripped[0]["note"])
+        run_dir = os.path.join(series.RUNS, tripped[0]["run_id"])
+        analysed = [a for name, a, _ in self.calls if name == "analyst.py" and tripped[0]["run_id"] in a]
+        self.assertEqual(analysed, [])
+        self.assertIn(("cost.py", run_dir), [(name, a[1]) for name, a, _ in self.calls if name == "cost.py"])
+        self.assertEqual(len([a for name, a, _ in self.calls if name == "analyst.py"]), 2)
         self.assertIn("the NeoMundi breaker is open: oversize on", held[0]["note"])
         provisional = glob.glob(os.path.join(folder, "%s.rehearsal.*.json" % sid))
         self.assertEqual(len(provisional), 1)
@@ -132,7 +151,13 @@ class TestTechnicalRun(unittest.TestCase):
         self.assertTrue(neomundi_client.reset_breaker(sid))
         technical_run.day(self.ns(override=None, dry=False))
         self.assertEqual(sorted(self.harness_tags()), ["D01-%s" % c for c in "ABCDEFGH"])
-        self.assertTrue(os.path.exists(os.path.join(folder, "%s.rehearsal.final.json" % sid)))
+        # the tripped purchase stays pending_measurement until its observations arrive or an
+        # operator retries it: the anchor of the round remains provisional and names it
+        self.assertFalse(os.path.exists(os.path.join(folder, "%s.rehearsal.final.json" % sid)))
+        latest = max(glob.glob(os.path.join(folder, "%s.rehearsal.*.json" % sid)), key=os.path.getmtime)
+        anchor = series.jload(latest)
+        self.assertEqual((anchor["state"], anchor["purchases_complete"], anchor["unfrozen"]),
+                         ("provisional", 8, ["D01-C"]))
 
     def test_one_round_of_eight(self):
         sid, folder = self.ready()

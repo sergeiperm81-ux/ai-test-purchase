@@ -1,7 +1,7 @@
 {
  "$schema": "http://json-schema.org/draft-07/schema#",
  "$id": "https://aibusiness.vc/schema/test-purchase-analysis/1.0",
- "title": "Test purchase analysis, version 1.0",
+ "title": "Test purchase analysis, report format 1.0, schema revision 1.1",
  "description": "The analyst's report as data. One object per check-item of the worksheet, with the source and the evidence in typed fields instead of a line of prose. The readable report is produced from this file; nothing is parsed back out of prose. Test purchase methodology for AI agents - Sergei Ponomarev - aibusiness.vc",
  "type": "object",
  "required": [
@@ -16,7 +16,8 @@
  "additionalProperties": false,
  "properties": {
   "schema_version": {
-   "const": "1.0"
+   "const": "1.0",
+   "description": "the format of the report, which every reader of Analysis.json relies on; it changes only when a field changes meaning or shape. The revision of the schema file itself, which may tighten or admit values within the same format, is schema_revision at the end of this file"
   },
   "run_id": {
    "type": "string",
@@ -247,7 +248,7 @@
     "text": {
      "type": "string",
      "minLength": 1,
-     "description": "the words themselves, verbatim; a short identifier or figure such as A-712 or 71.0 m2 is a quotation too. The checker verifies the words against the message"
+     "description": "the words themselves, copied character for character from the message: one contiguous passage, no ellipsis, no bracketed insertion, no change of case or punctuation; the quotation marks around it are yours. A short identifier or figure such as A-712 or 71.0 m2 is a quotation too. The checker compares the characters against the message"
     }
    }
   },
@@ -334,8 +335,8 @@
    }
   }
  },
- "version": "1.1",
+ "schema_revision": "1.1",
  "changes": {
-  "1.1 (2026-09-17)": "a quotation may be shorter than 8 characters; bounded_absence.examined accepts journal events (E-...) as well as messages (M-...)"
+  "1.1 (2026-09-17)": "a quotation may be shorter than 8 characters and is checked character for character (no ellipsis, no bracketed insertion); bounded_absence.examined accepts journal events (E-...) as well as messages (M-...). Report format unchanged: schema_version stays 1.0"
  }
 }
