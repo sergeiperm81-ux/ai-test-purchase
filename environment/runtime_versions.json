@@ -1,0 +1,18 @@
+{
+ "recorded_at_utc": "2026-09-17T05:34:32Z",
+ "python": "3.12.10",
+ "implementation": "CPython",
+ "os": "Windows",
+ "os_version": "10.0.19045",
+ "architecture": "AMD64",
+ "packages": {
+  "jsonschema": "4.26.0",
+  "pytest": "9.0.2",
+  "tzdata": "2025.3",
+  "attrs": "26.1.0",
+  "referencing": "0.37.0",
+  "rpds-py": "0.30.0",
+  "jsonschema-specifications": "2025.9.1"
+ },
+ "note": "the runtime the series is frozen under; requirements.txt gives lower bounds, this file the exact versions"
+}

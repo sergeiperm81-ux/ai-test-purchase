@@ -301,7 +301,8 @@ def plan(a):
     validate_configuration(models, configurations)
     labels = list(LABELS[:len(names)])
     start = datetime.date.fromisoformat(a.start)
-    sid = "S-%s-%dx%d" % (start.strftime("%Y%m%d"), len(names), a.days)
+    technical = bool(getattr(a, "technical", False))
+    sid = "%s-%s-%dx%d" % ("TECH" if technical else "S", start.strftime("%Y%m%d"), len(names), a.days)
     folder = os.path.join(SERIES, sid)
     if os.path.exists(folder):
         raise SystemExit("series %s already planned; a plan is written once" % sid)
@@ -351,6 +352,10 @@ def plan(a):
                         "of the served model is not repeated; the last two stop the day",
           "window_utc": a.window_utc,
           "limits": models.get("limits"),
+          "counted": not technical,
+          "purpose": ("technical rehearsal: DIAGNOSTIC, NOT COUNTED. Every purchase is run, "
+                      "analysed, checked and frozen exactly as in a counted series, and every "
+                      "one is marked so" if technical else "the counted series"),
           "model_key_sha256": sha256_file(key_path),
           "models_configuration_commitment_sha256":
               model_configuration_commitment(os.path.join(folder, "models.json"), nonce),
@@ -369,6 +374,11 @@ def plan(a):
           "schedule": days}
     plan_path = os.path.join(folder, "plan.json")
     jdump(plan_path, pl)
+    if technical:
+        with open(os.path.join(folder, "DIAGNOSTIC.md"), "w", encoding="utf-8", newline="") as f:
+            f.write("# DIAGNOSTIC / NOT COUNTED\n\nSeries %s is a technical rehearsal. Its purchases "
+                    "exercise the whole pipeline and are frozen like counted ones, so that the "
+                    "pipeline is tested to the end, but none of them is a result of the pilot.\n" % sid)
     with open(os.path.join(SERIES, "CURRENT"), "w", encoding="utf-8", newline="") as f:
         f.write(sid)
     print("series  :", sid)
@@ -564,6 +574,14 @@ def analyse(run_id, pl, run_analyst=True):
     if not ok:
         notes.append("measurement: " + detail.get("why", "missing"))
         return "pending_measurement", notes
+    if pl.get("counted") is False:
+        # written before the freeze, so that the freeze pins the mark itself
+        status_path = os.path.join(run_dir, "RUN_STATUS.md")
+        if not os.path.exists(status_path):
+            with open(status_path, "w", encoding="utf-8", newline="") as f:
+                f.write("# RUN_STATUS: DIAGNOSTIC / NOT COUNTED\n\nRun %s belongs to the technical "
+                        "rehearsal %s. It is analysed, checked and frozen like a counted purchase, "
+                        "and it is not a result of the pilot.\n" % (run_id, pl["series"]))
     code, out, err = run_cmd(["freeze_matrix.py", run_dir, "--no-anchor"])
     run_cmd(["cost.py", run_dir])
     if code != 0:
@@ -594,6 +612,7 @@ def run_manifest(sid, day, label, model, run_id, status, pl, override):
     prov = m.get("provider")
     ok, detail = measurement(run_dir, pl)
     out = {"series": sid, "day": day, "label": label, "run_id": run_id,
+           "counted": pl.get("counted", True),
            "model_requested": model, "model_reported": m.get("model_reported"),
            "provider": prov.get("provider") if isinstance(prov, dict) else prov,
            "status": status,
@@ -638,6 +657,9 @@ def neomundi_config_problems(cfg):
         problems.append("observe_roles is empty")
     if not isinstance(cfg.get("max_attempts"), int) or cfg["max_attempts"] < 1:
         problems.append("max_attempts is not a positive integer")
+    for k in ("max_requests_per_scope", "max_requests_per_purchase"):
+        if not isinstance(cfg.get(k), int) or cfg[k] < 1:
+            problems.append("%s is not a positive integer: every outgoing request must be capped" % k)
     return problems
 
 
@@ -948,6 +970,9 @@ def main():
     p.add_argument("--models", default=os.path.join(BASE, "models.json"))
     p.add_argument("--window-utc", default="12:00-16:00",
                    help="the UTC window in which every purchase of a day starts")
+    p.add_argument("--technical", action="store_true",
+                   help="a technical rehearsal: the series id starts with TECH, the plan says "
+                        "counted: false, and every run is marked DIAGNOSTIC / NOT COUNTED")
     p.set_defaults(fn=plan)
     p = sub.add_parser("neomundi"); p.add_argument("--version", required=True)
     p.add_argument("--schema", required=True); p.add_argument("--required-keys")

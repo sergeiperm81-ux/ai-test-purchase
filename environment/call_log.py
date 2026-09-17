@@ -85,11 +85,11 @@ def _append_jsonl(path, obj):
 
 
 class LedgerLock:
-    """An exclusive lock file next to the ledger. Held for milliseconds; a lock older than
-    LOCK_STALE_S is left by a dead process and is removed."""
+    """An exclusive lock file next to a ledger (the spend ledger by default). Held for
+    milliseconds; a lock older than LOCK_STALE_S is left by a dead process and is removed."""
 
-    def __init__(self):
-        self.path = ledger_path() + ".lock"
+    def __init__(self, ledger=None):
+        self.path = (ledger or ledger_path()) + ".lock"
 
     def __enter__(self):
         os.makedirs(os.path.dirname(self.path), exist_ok=True)

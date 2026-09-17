@@ -54,7 +54,8 @@ def models_file(folder, url, **over):
                               "per_scope": {"USD": 100, "CHF": 100}}},
         "neomundi": {"enabled": False, "base_url": url + "/nm", "observe_path": "/v1/govern",
                      "contract_path": "/v1/rgc/contracts/{request_id}", "key_env": "TESTKEY_NM",
-                     "mode": "OBS", "observe_roles": ["agent"], "max_attempts": 3},
+                     "mode": "OBS", "observe_roles": ["agent"], "max_attempts": 3,
+                     "max_requests_per_scope": 100, "max_requests_per_purchase": 50},
         "models": [
             cfg("oa-model", "oa:oa-model", url, "/oa/v1", max_tokens_param="max_completion_tokens"),
             cfg("anth-model", "an:anth-model", url, "/anth/v1", protocol="anthropic_messages",
@@ -108,6 +109,7 @@ class RigCase(unittest.TestCase):
         self.saved_env = dict(os.environ)
         os.environ.update(SECRETS)
         os.environ["TEST_PURCHASE_LEDGER"] = os.path.join(self.tmp, "ledger", "spend.jsonl")
+        os.environ["TEST_PURCHASE_NEOMUNDI_LEDGER"] = os.path.join(self.tmp, "ledger", "neomundi.jsonl")
         os.environ["TEST_PURCHASE_APPROVALS"] = os.path.join(self.tmp, "approvals", "confirmations.jsonl")
         os.environ["TEST_PURCHASE_RETRY_SCALE"] = "0"
         os.environ["TEST_PURCHASE_BUDGET_SCOPE"] = "test-scope"
@@ -612,6 +614,40 @@ class TestNeoMundi(RigCase):
         self.assertFalse(ok_)
         self.assertTrue(any("without a request_id" in p for p in detail["problems"]))
         self.assertEqual(self.mock.to(self.CONTRACTS), [])
+
+    def test_every_outgoing_request_counts_against_the_scope_cap(self):
+        # cap 2 for the scope: two failed tries leave, the third is not sent at all
+        self.use_models(neomundi={"enabled": True, "max_requests_per_scope": 2})
+        self.mock.route("/oa/", ok(openai_body()))
+        self.mock.route(self.GOVERN, (500, {}, b"down"))
+        self.chat()
+        self.assertEqual(len(self.mock.to(self.GOVERN)), 2)
+        self.assertEqual(neomundi_client.requests_made(scope="test-scope"), 2)
+        last = neomundi_client.links(self.run_dir)[-1]
+        self.assertEqual(last["status"], "pending")
+        self.assertIn("cap of 2", last["error"])
+        self.assertEqual(len(self.mock.to("/oa/")), 1)          # the model is not re-called
+        self.assertFalse(neomundi_client.verify_links(self.run_dir)[0])
+
+    def test_contract_requests_count_too_and_the_purchase_cap_holds(self):
+        # cap 1 per purchase: the observation leaves, the contract request does not
+        self.use_models(neomundi={"enabled": True, "max_requests_per_purchase": 1})
+        self.mock.route("/oa/", ok(openai_body()))
+        self.neomundi_up()
+        self.chat()
+        self.assertEqual(len(self.mock.to(self.GOVERN)), 1)
+        self.assertEqual(self.mock.to(self.CONTRACTS), [])
+        self.assertEqual([l["status"] for l in neomundi_client.links(self.run_dir)],
+                         ["observed", "contract_pending"])
+        self.assertEqual(neomundi_client.requests_made(run_id="RUN-T"), 1)
+
+    def test_without_caps_nothing_is_sent(self):
+        self.use_models(neomundi={"enabled": True, "max_requests_per_scope": None})
+        self.mock.route("/oa/", ok(openai_body()))
+        self.neomundi_up()
+        self.chat()
+        self.assertEqual(self.mock.to("/nm/"), [])
+        self.assertIn("no request caps", neomundi_client.links(self.run_dir)[-1]["error"])
 
     def test_analyst_calls_are_not_observed(self):
         self.use_models(neomundi={"enabled": True})

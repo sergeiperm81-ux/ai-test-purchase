@@ -46,6 +46,47 @@ RETRYABLE = {408, 425, 429, 500, 502, 503, 504, 529}
 # a body NeoMundi refuses is refused for good: resending the same bytes is pointless
 REFUSED = {400, 409, 413, 415, 422}
 CONFIG_FILE = "config-at-start.json"
+BASE = os.path.dirname(os.path.abspath(__file__))
+
+
+def request_ledger_path():
+    return os.environ.get("TEST_PURCHASE_NEOMUNDI_LEDGER") or \
+        os.path.join(BASE, "ledger", "neomundi_requests.jsonl")
+
+
+def requests_made(scope=None, run_id=None):
+    """Outgoing NeoMundi requests recorded so far, every kind and every outcome."""
+    n = 0
+    for r in call_log._read_jsonl(request_ledger_path()):
+        if scope is not None and r.get("scope") != scope:
+            continue
+        if run_id is not None and r.get("run_id") != run_id:
+            continue
+        n += 1
+    return n
+
+
+def reserve_request(run_dir, cfg, attempt_id, kind):
+    """Counts one outgoing request against the caps of the budget scope and of the purchase,
+    atomically and before it is sent. Every POST counts, observations and contracts alike,
+    whatever NeoMundi answers: what is capped is what leaves, not what succeeds. Without a
+    cap in the configuration nothing is sent. Returns (allowed, detail)."""
+    cap_scope, cap_run = cfg.get("max_requests_per_scope"), cfg.get("max_requests_per_purchase")
+    if not isinstance(cap_scope, int) or not isinstance(cap_run, int):
+        return False, "the NeoMundi configuration sets no request caps: nothing is sent"
+    scope, run_id = call_log.budget_scope(), os.path.basename(os.path.abspath(run_dir))
+    path = request_ledger_path()
+    with call_log.LedgerLock(path):
+        rows = call_log._read_jsonl(path)
+        in_scope = sum(1 for r in rows if r.get("scope") == scope)
+        in_run = sum(1 for r in rows if r.get("run_id") == run_id)
+        if in_scope >= cap_scope:
+            return False, "the cap of %d NeoMundi requests for scope %s is reached" % (cap_scope, scope)
+        if in_run >= cap_run:
+            return False, "the cap of %d NeoMundi requests for this purchase is reached" % cap_run
+        call_log._append_jsonl(path, {"at_utc": call_log.utc_iso(), "scope": scope, "run_id": run_id,
+                                      "provider_attempt_id": attempt_id, "kind": kind})
+    return True, {"scope_requests": in_scope + 1, "purchase_requests": in_run + 1}
 
 
 def _folder(run_dir):
@@ -179,6 +220,12 @@ def _send(run_dir, attempt_id, request_bytes, cfg, hashes):
     n_prev = sum(1 for l in links(run_dir) if l["provider_attempt_id"] == attempt_id and l.get("try"))
     for t in range(1, tries + 1):
         n = n_prev + t
+        allowed, why = reserve_request(run_dir, cfg, attempt_id, "observation")
+        if not allowed:
+            call_log._append_jsonl(_links_path(run_dir), dict(hashes, **{
+                "provider_attempt_id": attempt_id, "status": "pending", "at_utc": call_log.utc_iso(),
+                "error": why + "; the request is saved and can be flushed under a new cap"}))
+            return "pending"
         started = call_log.utc_now()
         status, body, headers, error = _post(
             cfg, url_for(cfg, cfg.get("observe_path", "/v1/govern")), request_bytes, key)
@@ -233,6 +280,12 @@ def fetch_contract(run_dir, attempt_id, request_id, cfg, hashes, key=None):
         key = _key_of(run_dir, cfg, attempt_id, hashes)
         if key is None:
             return "pending"
+    allowed, why = reserve_request(run_dir, cfg, attempt_id, "contract")
+    if not allowed:
+        call_log._append_jsonl(_links_path(run_dir), dict(hashes, **{
+            "provider_attempt_id": attempt_id, "at_utc": call_log.utc_iso(),
+            "neomundi_request_id": request_id, "status": "contract_pending", "error": why}))
+        return "contract_pending"
     url = url_for(cfg, path_template.replace("{request_id}", request_id))
     status, body, headers, error = _post(cfg, url, b"{}", key)
     ok = status is not None and 200 <= status < 300 and body is not None
