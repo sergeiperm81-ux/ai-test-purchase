@@ -695,6 +695,9 @@ def neomundi_config_problems(cfg):
         problems.append("observe_roles is empty")
     if not isinstance(cfg.get("max_attempts"), int) or cfg["max_attempts"] < 1:
         problems.append("max_attempts is not a positive integer")
+    import projection
+    if cfg.get("prompt_projection") and cfg["prompt_projection"] not in projection.KNOWN:
+        problems.append("prompt_projection %r is not a known projection" % cfg["prompt_projection"])
     for k in ("max_observations_per_scope", "max_observations_per_purchase",
               "max_contracts_per_scope", "max_contracts_per_purchase", "max_prompt_chars"):
         if not isinstance(cfg.get(k), int) or cfg[k] < 1:

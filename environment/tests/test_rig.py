@@ -7,6 +7,7 @@ Run: python -m pytest tests -q      (or: python -m unittest discover tests)
 """
 import os, sys, json, glob, shutil, tempfile, subprocess, threading, datetime, unittest
 import fsio
+import unittest.mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BASE = os.path.dirname(HERE)
@@ -744,6 +745,134 @@ class TestNeoMundi(RigCase):
                          {"RUN-T.C0001.A1": "oversize", "RUN-T.C0002.A1": "circuit_open"})
         self.assertEqual(self.mock.to("/nm/"), [])
         self.assertIn("oversize on RUN-T.C0001.A1", neomundi_client.breaker_open("test-scope")["reason"])
+
+    def test_an_agreed_projection_is_sent_instead_of_the_full_request(self):
+        # a short limit that the full request exceeds and its projection does not
+        import projection
+        self.use_models(neomundi={"enabled": True, "max_prompt_chars": 2000,
+                                  "prompt_projection": "tp-projection/1"})
+        self.mock.route("/oa/", ok(openai_body()))
+        self.neomundi_up()
+        providers.chat("oa-model", [{"role": "system", "content": "policy " * 400},
+                                    {"role": "user", "content": "I want the flat on the seventh floor."}],
+                       recorder=self.recorder(), role="agent")
+        self.assertEqual(len(self.mock.to(self.GOVERN)), 1)
+        sent = json.loads(self.mock.to(self.GOVERN)[0]["body"])
+        body = json.loads(sent["llm_prompt"])
+        self.assertLessEqual(len(sent["llm_prompt"]), 2000)
+        self.assertEqual(body["projection"], "tp-projection/1")
+        self.assertEqual(body["new_input"], [{"role": "user", "content": "I want the flat on the seventh floor."}])
+        self.assertEqual(body["fixed"]["system"][0]["chars"], len(json.dumps("policy " * 400)))
+        call = call_log.attempts(self.run_dir)[-1]
+        self.assertEqual(body["full_request"]["sha256"], call["request_sha256"])
+        ok_, detail = neomundi_client.verify_links(self.run_dir)
+        self.assertTrue(ok_, detail["problems"][:3])
+        # a projection that does not match the kept request breaks the chain
+        path = os.path.join(self.run_dir, "neomundi", "requests", call["provider_attempt_id"] + ".json")
+        saved = json.loads(fsio.read_bytes(path))
+        saved["llm_prompt"] = saved["llm_prompt"].replace("seventh", "eighth")
+        raw = json.dumps(saved, ensure_ascii=False).encode("utf-8")
+        os.chmod(path, 0o666)
+        with open(path, "wb") as f:
+            f.write(raw)
+        rows = neomundi_client.links(self.run_dir)
+        for r in rows:
+            if r.get("neomundi_request_sha256"):
+                r["neomundi_request_sha256"] = call_log.sha256_bytes(raw)
+        with open(os.path.join(self.run_dir, "neomundi", "links.jsonl"), "w", encoding="utf-8") as f:
+            f.write("".join(json.dumps(r) + "\n" for r in rows))
+        ok_, detail = neomundi_client.verify_links(self.run_dir)
+        self.assertFalse(ok_)
+        self.assertTrue(any("tp-projection/1 projection" in p for p in detail["problems"]))
+
+    def test_the_projection_withholds_only_tool_results_and_says_so(self):
+        import projection
+        big = "x" * 5000
+        req = {"model": "m", "tools": [], "messages": [
+            {"role": "system", "content": "s"}, {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": None, "tool_calls": [{"id": "t1"}]},
+            {"role": "tool", "tool_call_id": "t1", "content": big}]}
+        raw = json.dumps(req).encode("utf-8")
+        full = json.loads(projection.project(raw, 100000))
+        self.assertEqual(full["new_input"][0]["content"], big)
+        self.assertNotIn("withheld", full)
+        short = json.loads(projection.project(raw, 1500))
+        self.assertEqual(short["new_input"][0]["content_withheld"], projection.fingerprint(big))
+        self.assertEqual(short["withheld"][0]["message"], 0)
+        self.assertEqual(projection.project(raw, 1500), projection.project(raw, 1500))
+        # the customer's words are never withheld: a line that cannot fit is not projected
+        req["messages"] = req["messages"][:2]
+        req["messages"][1]["content"] = "y" * 5000
+        self.assertIsNone(projection.project(json.dumps(req).encode("utf-8"), 1500))
+        # Anthropic shape: tool results are blocks of a user message, the system is top level
+        anth = {"model": "m", "system": [{"type": "text", "text": "s"}], "messages": [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": [{"type": "tool_use", "id": "t1"}]},
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": big}]}]}
+        short = json.loads(projection.project(json.dumps(anth).encode("utf-8"), 1500))
+        self.assertEqual(len(short["fixed"]["system"]), 1)
+        self.assertEqual(short["new_input"][0]["content"][0]["content_withheld"]["chars"], len(json.dumps(big)))
+        self.assertEqual(short["history"]["messages"], 2)
+
+    def test_an_unknown_projection_is_refused(self):
+        with self.assertRaises(ValueError):
+            neomundi_client.prompt_for(b"{}", {"prompt_projection": "made-up/9"})
+        import series
+        self.assertIn("not a known projection", " ".join(series.neomundi_config_problems(
+            {"enabled": True, "prompt_projection": "made-up/9"})))
+
+    def two_call_run(self):
+        """A purchase of two completed agent calls with no NeoMundi configuration yet."""
+        self.use_models(neomundi={"enabled": False, "prompt_projection": "tp-projection/1"})
+        self.mock.route("/oa/", ok(openai_body()))
+        rec = call_log.Recorder(self.run_dir, "RUN-T", {"pilot_id": "P-TEST"}, providers.limits())
+        providers.chat("oa-model", [{"role": "user", "content": "one"}], recorder=rec, role="agent")
+        providers.chat("oa-model", [{"role": "user", "content": "two"}], recorder=rec, role="agent")
+        shutil.rmtree(os.path.join(self.run_dir, "neomundi"), ignore_errors=True)
+        os.environ["TEST_PURCHASE_LEDGER_DIR"] = os.path.join(self.tmp, "ledger")   # never the real one
+        return [c["provider_attempt_id"] for c in call_log.attempts(self.run_dir)]
+
+    def test_a_probe_sends_one_observation_at_most_and_checks_only_that_call(self):
+        first, second = self.two_call_run()
+        self.mock.route(self.GOVERN, (503, {}, b"busy"))
+        before = dict(os.environ)
+        try:
+            self.assertEqual(neomundi_client.probe(self.run_dir, first), "pending")
+            self.assertEqual(os.environ["TEST_PURCHASE_BUDGET_SCOPE"], "probe-" + os.path.basename(self.run_dir))
+        finally:
+            os.environ.clear()
+            os.environ.update(before)
+        self.assertEqual(len(self.mock.to(self.GOVERN)), 1)       # a 503 is not retried in a probe
+        frozen = neomundi_client.run_config(self.run_dir)
+        for k, v in neomundi_client.PROBE_LIMITS.items():
+            self.assertEqual(frozen[k], v)
+        self.assertTrue(frozen["enabled"])
+        # a flush later cannot exceed the one paid observation either
+        self.neomundi_up()
+        with unittest.mock.patch.dict(os.environ, neomundi_client.probe_env(self.run_dir)):
+            self.assertEqual(neomundi_client.flush(self.run_dir), {first: "pending"})
+        self.assertEqual(len(self.mock.to(self.GOVERN)), 1)
+        # a second probe on the same copy is refused before anything is sent
+        with self.assertRaises(SystemExit):
+            neomundi_client.probe(self.run_dir, second)
+
+    def test_verify_attempt_checks_one_call_where_verify_links_checks_the_purchase(self):
+        first, second = self.two_call_run()
+        self.neomundi_up()
+        before = dict(os.environ)
+        try:
+            self.assertEqual(neomundi_client.probe(self.run_dir, first), "observed")
+        finally:
+            os.environ.clear()
+            os.environ.update(before)
+        self.assertEqual((len(self.mock.to(self.GOVERN)), len(self.mock.to(self.CONTRACTS))), (1, 1))
+        ok_, detail = neomundi_client.verify_attempt(self.run_dir, first)
+        self.assertTrue(ok_, detail["problems"])
+        self.assertEqual((detail["request_id"], detail["tries"], detail["prompt_projection"]),
+                         ("nm-1", 1, "tp-projection/1"))
+        self.assertFalse(neomundi_client.verify_links(self.run_dir)[0])      # the second call is unobserved
+        self.assertFalse(neomundi_client.verify_attempt(self.run_dir, second)[0])
+        self.assertFalse(neomundi_client.verify_attempt(self.run_dir, "RUN-T.C0099.A1")[0])
 
     def test_without_a_size_limit_nothing_is_sent(self):
         self.use_models(neomundi={"enabled": True, "max_prompt_chars": None})

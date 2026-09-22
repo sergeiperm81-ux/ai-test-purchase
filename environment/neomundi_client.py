@@ -42,6 +42,7 @@ import os, sys, json, time, base64, hashlib, urllib.request, urllib.error
 import fsio
 
 import call_log
+import projection
 
 RETRYABLE = {408, 425, 429, 500, 502, 503, 504, 529}
 # a body NeoMundi refuses is refused for good: resending the same bytes is pointless
@@ -189,7 +190,7 @@ def build_body(line, request_bytes, response_bytes, cfg):
     # null in this field (HTTP 422), so it is left out rather than filled with a number we
     # did not measure. Our own computed cost stays in cost.json, labelled as computed.
     body = {"source_type": "llm", "mode": cfg.get("mode", "OBS"),
-            "llm_prompt": request_bytes.decode("utf-8"),
+            "llm_prompt": prompt_for(request_bytes, cfg),
             "llm_response": response_bytes.decode("utf-8", "replace"),
             "raw_metrics": {"token_count": (norm.get("input_tokens") or 0) + (norm.get("output_tokens") or 0),
                             "latency_ms": line.get("latency_ms"),
@@ -202,6 +203,21 @@ def build_body(line, request_bytes, response_bytes, cfg):
             "requested_model_id", "observed_model_id", "prompt_version",
             "configuration_version", "started_at_utc", "ended_at_utc")}
     return body
+
+
+def prompt_for(request_bytes, cfg):
+    """What goes into llm_prompt: the exact provider request, or, where the configuration
+    names an agreed projection, that projection of it. A projection that cannot fit leaves
+    the full request in place, so that the size check refuses it rather than anything here
+    cutting it down by a rule nobody agreed."""
+    name = cfg.get("prompt_projection")
+    if not name:
+        return request_bytes.decode("utf-8")
+    if name not in projection.KNOWN:
+        raise ValueError("unknown prompt projection %r: known are %s" % (name, ", ".join(projection.KNOWN)))
+    limit = cfg.get("max_prompt_chars")
+    projected = projection.project(request_bytes, limit) if isinstance(limit, int) else None
+    return projected if projected is not None else request_bytes.decode("utf-8")
 
 
 USER_AGENT = "aibusiness-test-purchase/3.0 (+https://aibusiness.vc)"
@@ -484,7 +500,15 @@ def _check_observation(run_dir, l, call, cfg_sha):
             (call["request_sha256"], call.get("response_sha256")):
         problems.append("%s: the link names other provider files than the call log" % aid)
     body = json.loads(fsio.read_bytes(os.path.join(run_dir, rel)))
-    if call_log.sha256_bytes(body.get("llm_prompt", "").encode("utf-8")) != call["request_sha256"]:
+    cfg = run_config(run_dir) or {}
+    if cfg.get("prompt_projection"):
+        # recomputed from the provider request we kept: the projection is a function of
+        # those bytes, so anyone holding them gets the same llm_prompt
+        request = fsio.read_bytes(os.path.join(run_dir, call.get("request_file") or ""))
+        if body.get("llm_prompt", "") != prompt_for(request, cfg):
+            problems.append("%s: llm_prompt is not the %s projection of the provider request"
+                            % (aid, cfg["prompt_projection"]))
+    elif call_log.sha256_bytes(body.get("llm_prompt", "").encode("utf-8")) != call["request_sha256"]:
         problems.append("%s: llm_prompt is not the exact provider request" % aid)
     if call_log.sha256_bytes(body.get("llm_response", "").encode("utf-8")) != call.get("response_sha256"):
         problems.append("%s: llm_response is not the exact provider response" % aid)
@@ -604,21 +628,74 @@ def verify_links(run_dir, roles=("agent",)):
     return (not problems and bool(completed)), detail
 
 
+def verify_attempt(run_dir, attempt_id):
+    """The chain of one call only: exactly one observation and, where contracts are
+    retrieved, exactly one signed contract, every file with its checksum, llm_prompt and
+    llm_response exactly what the configuration of the run makes of the provider bytes.
+    For a probe of a single call in a copy of a whole purchase, where verify_links would
+    rightly report every other call as unobserved. Returns (ok, detail)."""
+    call = next((c for c in call_log.attempts(run_dir) if c["provider_attempt_id"] == attempt_id), None)
+    if call is None or call["outcome"] != "completed":
+        return False, {"attempt": attempt_id, "problems": ["no completed attempt %s in this run" % attempt_id]}
+    cfg, cfg_sha = run_config(run_dir) or {}, _config_sha(run_dir)
+    mine = [l for l in links(run_dir) if l["provider_attempt_id"] == attempt_id]
+    observed = [l for l in mine if l["status"] == "observed"]
+    contracts = {attempt_id: [l for l in mine if l["status"] == "contract"]}
+    others = sorted({l["provider_attempt_id"] for l in links(run_dir)} - {attempt_id})
+    problems = []
+    if others:
+        problems.append("the links name other calls too: %s" % ", ".join(others[:5]))
+    if len(observed) != 1:
+        problems.append("%s: %d observations, exactly 1 required" % (attempt_id, len(observed)))
+        return False, {"attempt": attempt_id, "problems": problems}
+    l = observed[0]
+    problems += _check_observation(run_dir, l, call, cfg_sha)
+    if not l.get("neomundi_request_id"):
+        problems.append("%s: the observation came back without a request_id" % attempt_id)
+    if cfg.get("contract_path"):
+        problems += _check_contract(run_dir, attempt_id, contracts, l.get("neomundi_request_id"))
+    return not problems, {"attempt": attempt_id, "problems": problems,
+                          "request_id": l.get("neomundi_request_id"),
+                          "http_status": l.get("http_status"),
+                          "prompt_projection": cfg.get("prompt_projection"),
+                          "tries": sum(1 for x in mine if x.get("try"))}
+
+
+# a probe sends exactly one observation and asks for exactly one contract, whatever
+# happens: no retry, and caps of one that no later flush can exceed
+PROBE_LIMITS = {"max_attempts": 1,
+                "max_observations_per_scope": 1, "max_observations_per_purchase": 1,
+                "max_contracts_per_scope": 1, "max_contracts_per_purchase": 1}
+
+
+def probe_env(run_dir):
+    """The scope and the request ledger of a probe: its own, named after its folder, so
+    that its one request is counted apart from every series and rehearsal."""
+    run_id = os.path.basename(os.path.abspath(run_dir))
+    return {"TEST_PURCHASE_BUDGET_SCOPE": "probe-" + run_id,
+            "TEST_PURCHASE_NEOMUNDI_LEDGER": os.path.join(
+                os.environ.get("TEST_PURCHASE_LEDGER_DIR") or os.path.join(BASE, "ledger"),
+                "probe-%s-neomundi.jsonl" % run_id)}
+
+
 def probe(run_dir, attempt_id):
     """One live observation of a call that was already made and recorded, to see what
-    NeoMundi actually returns before the measurement is declared. No model is called: the
-    request and the response come from the call log. It consumes NeoMundi allowance, so it
-    is run deliberately, once, with the owner's approval."""
+    NeoMundi actually returns before a round is spent on it. No model is called: the
+    request and the response come from the call log. The run must not have a NeoMundi
+    configuration yet: the probe freezes its own, the current one with PROBE_LIMITS, so
+    that one paid observation is all it can ever send. Run deliberately, with the owner's
+    approval, in its own scope and ledger (probe_env)."""
     import providers
+    if run_config(run_dir) is not None:
+        raise SystemExit("this run already has a frozen NeoMundi configuration: a probe needs a "
+                         "copy of the purchase without its neomundi folder")
+    for k, v in probe_env(run_dir).items():
+        os.environ[k] = v
+    cfg = dict(providers.neomundi_config(), enabled=True, **PROBE_LIMITS)
+    os.makedirs(_folder(run_dir), exist_ok=True)
+    with open(os.path.join(_folder(run_dir), CONFIG_FILE), "xb") as f:
+        f.write(json.dumps(cfg, ensure_ascii=False, indent=1).encode("utf-8"))
     cfg = run_config(run_dir)
-    if cfg is None:
-        cfg = dict(providers.neomundi_config(), enabled=True)
-        os.makedirs(_folder(run_dir), exist_ok=True)
-        with open(os.path.join(_folder(run_dir), CONFIG_FILE), "xb") as f:
-            f.write(json.dumps(cfg, ensure_ascii=False, indent=1).encode("utf-8"))
-        cfg = run_config(run_dir)
-    if not cfg.get("enabled"):
-        raise SystemExit("the frozen NeoMundi configuration of this run has observations disabled")
     line = next((a for a in call_log.attempts(run_dir)
                  if a["provider_attempt_id"] == attempt_id), None)
     if line is None or line["outcome"] != "completed":
@@ -633,6 +710,10 @@ if __name__ == "__main__":
     if len(sys.argv) == 4 and sys.argv[1] == "probe":
         print(probe(os.path.abspath(sys.argv[2]), sys.argv[3]))
         raise SystemExit(0)
+    if len(sys.argv) == 4 and sys.argv[1] == "verify-attempt":
+        ok_, detail = verify_attempt(os.path.abspath(sys.argv[2]), sys.argv[3])
+        print(json.dumps(detail, ensure_ascii=False, indent=1))
+        raise SystemExit(0 if ok_ else 1)
     if len(sys.argv) >= 2 and sys.argv[1] == "breaker":
         if "--reset" in sys.argv:
             print("breaker reset" if reset_breaker() else "no breaker was open")
