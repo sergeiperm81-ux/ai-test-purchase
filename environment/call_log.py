@@ -26,6 +26,7 @@ actual computed cost when usage came back, and at its reservation otherwise: an 
 that returned nothing may still have been charged. Reservations are made under a lock, so
 two processes cannot both pass the same remaining budget.
 """
+import threading
 import os, json, hashlib, datetime, time
 
 import usage
@@ -78,10 +79,16 @@ def _read_jsonl(path):
         return [json.loads(l) for l in f if l.strip()]
 
 
+_APPEND_LOCK = threading.Lock()
+
+
 def _append_jsonl(path, obj):
+    """One line, whole, even when several threads of one process append at once."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "a", encoding="utf-8", newline="") as f:
-        f.write(json.dumps(obj, ensure_ascii=False) + "\n")
+    line = json.dumps(obj, ensure_ascii=False) + "\n"
+    with _APPEND_LOCK:
+        with open(path, "a", encoding="utf-8", newline="") as f:
+            f.write(line)
 
 
 class LedgerLock:

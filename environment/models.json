@@ -1,6 +1,6 @@
 {
  "what_this_is": "The configurations of the series and how each is reached: configuration_id, provider, endpoint, protocol, the NAME of the environment variable holding its key, the rate_key it is priced by, the output limit and the model ids the provider is expected to report. Keys never appear here. The list is fixed at the plan of the series; series.py refuses any configuration, the analyst's included, whose observed model ids are not pinned.",
- "version": "1.0-rc8, 17.09.2026: all nine configurations pinned from setup checks; analyst gpt-5.4-mini-2026-03-17 with reasoning off",
+ "version": "1.0-rc9, 17.09.2026: all nine configurations pinned from setup checks; analyst gpt-5.4-mini-2026-03-17 with reasoning off",
  "pilot": {
   "pilot_id": "NEOMUNDI-AIBUSINESS-TP-2026",
   "scenario_id": "MARINA-KEYS-VIEWING-2026-09"
@@ -38,13 +38,15 @@
   "max_attempts": 3,
   "timeout_s": 60,
   "identifiers_field": null,
-  "note": "Confirmed by NeoMundi on 16.09.2026: OBS mode, one observation per completed service-agent call; failed calls stay in our log; the analyst is outside this population; our identifiers stay on our side and are tied to the observation by its request_id and its signed interoperability contract. Observations (paid, about CHF 0.03 each) and contract retrievals (free, not counted in the portal) have separate caps, mirrored on max_model_calls_per_purchase: one observation and one contract per completed agent call, 60 each per purchase, 6000 each per scope (30 rounds of 8 purchases of about 25 calls). Every outgoing request counts whatever NeoMundi answers; the count is reserved before sending. At a cap the purchase keeps running, the model is never re-called, and the purchase ends pending_measurement instead of frozen. llm_prompt carries tp-projection/1 of the provider request (projection.py, proposed to NeoMundi on 21.09.2026 as option B after NeoMundi confirmed the 10,000-character limit is part of its API): the new input verbatim, the fixed documents and the earlier dialogue as integrity commitments only; llm_response stays the exact provider response. A measurement of the current step, not of the full context. max_prompt_chars (10,000) is checked on the projection before it leaves: a body that does not fit is not sent, is recorded as oversize and opens the breaker of the scope.",
+  "note": "Confirmed by NeoMundi on 16.09.2026: OBS mode, one observation per completed service-agent call; failed calls stay in our log; the analyst is outside this population; our identifiers stay on our side and are tied to the observation by its request_id and its signed interoperability contract. Observations (paid, about CHF 0.03 each) and contract retrievals (free, not counted in the portal) have separate caps, mirrored on max_model_calls_per_purchase: one observation and one contract per completed agent call, 60 each per purchase, 6000 each per scope (30 rounds of 8 purchases of about 25 calls). Every outgoing request counts whatever NeoMundi answers; the count is reserved before sending. At a cap the purchase keeps running, the model is never re-called, and the purchase ends pending_measurement instead of frozen. llm_prompt carries tp-projection/1 of the provider request (projection.py, proposed to NeoMundi on 21.09.2026 as option B after NeoMundi confirmed the 10,000-character limit is part of its API): the new input verbatim, the fixed documents and the earlier dialogue as integrity commitments only; llm_response stays the exact provider response. A measurement of the current step, not of the full context. max_prompt_chars (10,000) is checked on the projection before it leaves: a body that does not fit is not sent, is recorded as oversize and opens the breaker of the scope. send is deferred: in OBS mode NeoMundi observes and does not answer the agent, so the observations of a purchase are built and saved at the moment of each call and leave when the purchase is over, up to max_parallel_sends at a time. Waiting for NeoMundi between two customer lines cost about 20 seconds per call and about 54 minutes of the round of 22.09.2026. A purchase that stopped early keeps its observations queued for a deliberate flush.",
   "max_observations_per_scope": 6000,
   "max_observations_per_purchase": 60,
   "max_contracts_per_scope": 6000,
   "max_contracts_per_purchase": 60,
   "max_prompt_chars": 10000,
-  "prompt_projection": "tp-projection/1"
+  "prompt_projection": "tp-projection/1",
+  "send": "deferred",
+  "max_parallel_sends": 4
  },
  "models": [
   {

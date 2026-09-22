@@ -573,6 +573,18 @@ def main():
 
     sim.finish(run)
     run.verify_journal()
+    # The observations of this purchase, where its frozen configuration defers them, leave
+    # now: the dialogue is over, so nothing waits on NeoMundi any more, and several go at
+    # once. A purchase that stopped early keeps its observations queued for a deliberate
+    # flush, so that a stop for the spend ceiling does not spend anything else.
+    cfg = neomundi_client.run_config(run.dir) or {}
+    if cfg.get("enabled") and cfg.get("send") == "deferred":
+        sent = neomundi_client.flush(run.dir)
+        kinds = {}
+        for v in sent.values():
+            kinds[v] = kinds.get(v, 0) + 1
+        print("NeoMundi: %d observation(s) sent after the purchase: %s"
+              % (len(sent), ", ".join("%s %d" % (k, n) for k, n in sorted(kinds.items()))))
     print("\nDone. Check the run folder.")
     if closure != "normal":
         print("CLOSURE:", closure)

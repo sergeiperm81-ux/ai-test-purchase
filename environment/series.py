@@ -698,6 +698,12 @@ def neomundi_config_problems(cfg):
     import projection
     if cfg.get("prompt_projection") and cfg["prompt_projection"] not in projection.KNOWN:
         problems.append("prompt_projection %r is not a known projection" % cfg["prompt_projection"])
+    if cfg.get("send") not in (None, "inline", "deferred"):
+        problems.append("send is %r: it is 'inline' (during the purchase) or 'deferred' "
+                        "(when the purchase is over)" % cfg["send"])
+    n = cfg.get("max_parallel_sends")
+    if n is not None and (not isinstance(n, int) or not 1 <= n <= 8):
+        problems.append("max_parallel_sends is not an integer between 1 and 8")
     for k in ("max_observations_per_scope", "max_observations_per_purchase",
               "max_contracts_per_scope", "max_contracts_per_purchase", "max_prompt_chars"):
         if not isinstance(cfg.get(k), int) or cfg[k] < 1:

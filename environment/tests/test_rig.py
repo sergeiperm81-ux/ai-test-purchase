@@ -874,6 +874,58 @@ class TestNeoMundi(RigCase):
         self.assertFalse(neomundi_client.verify_attempt(self.run_dir, second)[0])
         self.assertFalse(neomundi_client.verify_attempt(self.run_dir, "RUN-T.C0099.A1")[0])
 
+    def test_deferred_observations_leave_only_when_the_purchase_is_over(self):
+        # in OBS mode NeoMundi does not answer the agent, so the observation waits for the
+        # end of the purchase instead of costing 20 seconds between two customer lines
+        self.use_models(neomundi={"enabled": True, "send": "deferred"})
+        self.mock.route("/oa/", ok(openai_body()))
+        self.neomundi_up()
+        rec = self.recorder()
+        self.chat(rec=rec)
+        self.chat(rec=rec)
+        self.assertEqual(self.mock.to("/nm/"), [])                       # nothing yet
+        self.assertEqual([l["status"] for l in neomundi_client.links(self.run_dir)],
+                         ["queued", "queued"])
+        self.assertEqual(len(glob.glob(os.path.join(self.run_dir, "neomundi", "requests", "*.json"))), 2)
+        self.assertEqual(neomundi_client.requests_made(run_id="RUN-T"), 0)
+        out = neomundi_client.flush(self.run_dir)
+        self.assertEqual(sorted(out.values()), ["observed", "observed"])
+        self.assertEqual((len(self.mock.to(self.GOVERN)), len(self.mock.to(self.CONTRACTS))), (2, 2))
+        ok_, detail = neomundi_client.verify_links(self.run_dir)
+        self.assertTrue(ok_, detail["problems"][:3])
+        # the bodies are the same bytes an inline send would have produced
+        for p in glob.glob(os.path.join(self.run_dir, "neomundi", "requests", "*.json")):
+            body = fsio.read_json(p)
+            self.assertEqual(sorted(body), ["llm_prompt", "llm_response", "mode", "raw_metrics", "source_type"])
+
+    def test_a_deferred_flush_may_send_several_at_once_and_still_respects_the_caps(self):
+        self.use_models(neomundi={"enabled": True, "send": "deferred", "max_parallel_sends": 4,
+                                  "max_observations_per_purchase": 3})
+        self.mock.route("/oa/", ok(openai_body()))
+        self.neomundi_up()
+        rec = self.recorder()
+        for _ in range(5):
+            self.chat(rec=rec)
+        self.assertEqual(self.mock.to("/nm/"), [])
+        out = neomundi_client.flush(self.run_dir)
+        self.assertEqual(sorted(out.values()).count("observed"), 3)       # the cap of 3 holds
+        self.assertEqual(sorted(out.values()).count("pending"), 2)
+        self.assertEqual(len(self.mock.to(self.GOVERN)), 3)
+        self.assertEqual(neomundi_client.requests_made(run_id="RUN-T", kind="observation"), 3)
+        rows = neomundi_client.links(self.run_dir)
+        self.assertEqual(len([r for r in rows if r["status"] == "observed"]), 3)
+        self.assertTrue(all(json.dumps(r) for r in rows))                 # every line is whole JSON
+
+    def test_the_send_mode_and_the_parallelism_are_checked_in_the_plan(self):
+        import series
+        self.assertIn("send is 'now'", " ".join(series.neomundi_config_problems(
+            {"enabled": True, "send": "now"})))
+        self.assertIn("max_parallel_sends", " ".join(series.neomundi_config_problems(
+            {"enabled": True, "send": "deferred", "max_parallel_sends": 0})))
+        self.assertEqual([p for p in series.neomundi_config_problems(
+            dict(fsio.read_json(providers.MODELS)["neomundi"], enabled=True, send="deferred",
+                 max_parallel_sends=4)) if "send" in p or "parallel" in p], [])
+
     def test_without_a_size_limit_nothing_is_sent(self):
         self.use_models(neomundi={"enabled": True, "max_prompt_chars": None})
         self.mock.route("/oa/", ok(openai_body()))

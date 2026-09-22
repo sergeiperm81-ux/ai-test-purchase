@@ -38,7 +38,8 @@ Usage:
   python neomundi_client.py flush <run_dir>
   python neomundi_client.py verify <run_dir>
 """
-import os, sys, json, time, base64, hashlib, urllib.request, urllib.error
+import os, sys, json, time, base64, hashlib, threading, urllib.request, urllib.error
+import concurrent.futures
 import fsio
 
 import call_log
@@ -288,7 +289,7 @@ def _send(run_dir, attempt_id, request_bytes, cfg, hashes):
             "error": "the NeoMundi breaker of this scope is open: %s" % opened.get("reason")}))
         return "circuit_open"
     limit = cfg.get("max_prompt_chars")
-    size = len(json.loads(request_bytes).get("llm_prompt") or "")
+    size = len(json.loads(request_bytes.decode("utf-8")).get("llm_prompt") or "")
     if not isinstance(limit, int) or size > limit:
         why = ("no max_prompt_chars in the NeoMundi configuration" if not isinstance(limit, int)
                else "llm_prompt is %d characters, the limit is %d" % (size, limit))
@@ -423,6 +424,17 @@ def observe(run_dir, line, request_bytes, response_bytes):
               "provider_response_sha256": line["response_sha256"],
               "neomundi_request_sha256": call_log.sha256_bytes(raw),
               "config_sha256": _config_sha(run_dir)}
+    if cfg.get("send") == "deferred":
+        # The observation is built and saved here, with the bytes of the call it observes,
+        # and sent when the purchase is over (flush). In OBS mode NeoMundi observes and does
+        # not answer the agent, so waiting for it between two customer lines buys nothing and
+        # costs about 20 seconds per call. Nothing about the body changes; what changes is
+        # when it leaves and that several leave at once.
+        call_log._append_jsonl(_links_path(run_dir), dict(hashes, **{
+            "provider_attempt_id": line["provider_attempt_id"], "status": "queued",
+            "at_utc": call_log.utc_iso(),
+            "error": "saved to be sent when the purchase is over"}))
+        return "queued"
     return _send(run_dir, line["provider_attempt_id"], raw, cfg, hashes)
 
 
@@ -446,14 +458,17 @@ def _state(run_dir):
     return out
 
 
-def flush(run_dir):
-    """Sends again, byte for byte and under the run's frozen configuration, every
-    observation that is not yet observed, and retrieves every contract still missing."""
+def flush(run_dir, workers=None):
+    """Sends, byte for byte and under the run's frozen configuration, every observation that
+    is queued or not yet observed, and retrieves every contract still missing. Several
+    observations may be in flight at once (max_parallel_sends of the configuration, 1 by
+    default): each still reserves its place under the ledger lock before it leaves, so the
+    caps hold whatever the order."""
     cfg = run_config(run_dir)
     if not cfg or not cfg.get("enabled"):
         raise SystemExit("this run has no frozen NeoMundi configuration with observations "
                          "enabled: nothing is sent")
-    out = {}
+    out, work = {}, []
     for aid, s in _state(run_dir).items():
         if s["status"] == "invalid_request":
             out[aid] = "refused by NeoMundi: not sent again"
@@ -470,7 +485,16 @@ def flush(run_dir):
         if call_log.sha256_bytes(raw) != s["hashes"].get("neomundi_request_sha256"):
             out[aid] = "the saved request no longer matches its checksum: not sent"
             continue
-        out[aid] = _send(run_dir, aid, raw, cfg, s["hashes"])
+        work.append((aid, raw, s["hashes"]))
+    n = int(workers or cfg.get("max_parallel_sends") or 1)
+    if n > 1 and len(work) > 1:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=n) as pool:
+            futures = {pool.submit(_send, run_dir, aid, raw, cfg, h): aid for aid, raw, h in work}
+            for f in concurrent.futures.as_completed(futures):
+                out[futures[f]] = f.result()
+    else:
+        for aid, raw, h in work:
+            out[aid] = _send(run_dir, aid, raw, cfg, h)
     return out
 
 
