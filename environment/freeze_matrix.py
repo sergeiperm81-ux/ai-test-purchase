@@ -331,12 +331,19 @@ def main():
 
     contradiction_rows = (check.get("positions_scored_above_zero_without_full_performance")
                           or check.get("positions_scored_above_zero_with_a_breach") or [])
-    contradictions = [c for c in contradiction_rows if scores[int(c["position"])] > 0]
+    def still_contradicted(c):
+        """A breach forbids zero as well as a positive score; an unsettled check-item only
+        forbids a positive one."""
+        score = scores[int(c["position"])]
+        return score >= 0 if c.get("check_items_not_performed") else score > 0
+
+    contradictions = [c for c in contradiction_rows if still_contradicted(c)]
     if contradictions:
         raise SystemExit(
-            "position(s) %s are scored above zero although a check-item in them was breached "
-            "or not established (%s). A positive score requires full performance: correct "
-            "the analysis, or record a correction that moves the score and says why."
+            "position(s) %s carry a check-item that was not performed or not established and a "
+            "score that cannot stand with it (%s). A breach cannot be scored zero or above, and "
+            "an unsettled check-item cannot be scored above zero: correct the analysis, or "
+            "record a correction that moves the score and says why."
             % (", ".join(str(c["position"]) for c in contradictions),
                "; ".join("%s: %s" % (c["position"], ", ".join(
                    c.get("check_items_not_fully_performed")

@@ -1,4 +1,4 @@
-# Status, 16 September 2026
+# Status, 23 September 2026
 
 ## Settled
 
@@ -26,13 +26,29 @@
 - **The rig.** Exact request and response of every model call kept with checksums; a failed
   call repeated on its own; hard limits on calls, tool use and money; the cost computed per
   currency from published rates and labelled as computed.
-- **The providers.** Seven of the eight answered a live setup check on 15 September: one call
-  each, one correct tool call each, the requested model identifier reported by each API. The
-  check cost USD 0.0015 and CHF 0.00003 in total.
+- **The providers.** All eight answered a live setup check: seven on 15 September, DeepSeek on
+  17 September. One call each, one correct tool call each, the requested model identifier
+  reported by each API.
+- **Two diagnostic rounds of eight purchases, not counted.** 17 and 22 September, one purchase
+  per configuration. The first measured the cost (USD 2.83 + CHF 0.10 for the round, so about
+  USD 85 + CHF 3 for a series of thirty) and found the limit of the measurement layer. The
+  second ran under the frozen projection: every one of the 149 completed service-agent calls
+  produced an accepted observation and a retrieved contract, and the governance answers were
+  111 ALLOW and 38 FLAG.
+- **The measurement boundary.** NeoMundi accepts at most 10,000 characters in `llm_prompt`,
+  and a call of a purchase is 115,000 to 161,000. What is sent is `tp-projection/1`
+  (`methodology/NeoMundi tp-projection-1/`): the new input verbatim and the exact response,
+  with the fixed documents and the earlier dialogue represented by integrity commitments
+  only. It is a measurement of the current step and not of the full context, and it is frozen
+  with NeoMundi as of 23 September 2026.
 
 ## Open, and why the series has not started
 
-- **DeepSeek.** The eighth configuration; the credential has not arrived yet.
+- **The review of the second diagnostic round.** Seven of its eight purchases wait for the
+  reviewer: the checker blocked a score in each, most often because a quotation of the analyst
+  did not match the message character for character, and in some positions because an
+  obligation was not performed. The round is closed with an explicitly versioned review layer
+  over the analyses as they were issued; nothing of them is rewritten.
 - **An unavailable cost is currently measured as a zero cost.** The measurement layer refuses
   a null cost, and omitting the field produces a perfect cost score. Neither is honest for a
   provider that reports no cost. Waiting for the correct representation.
@@ -40,9 +56,12 @@
   matches, and the signature binds that hash, the request id and the timestamp. The signature
   itself cannot be verified until the public key is published, and it is recorded as
   unverified rather than assumed good.
-- **A technical run.** Two or three configurations over two or three days, not counted, to
-  measure what the series will actually cost and to pin the model identifiers each provider
-  serves. Then the configuration is frozen and day 1 begins.
+- **The scheduled runner.** The series runs one round a day for thirty days, and a round of
+  the second rehearsal took 67 minutes of wall-clock time, of which 54 were spent waiting for
+  the measurement layer between customer lines. The observations are now built at the moment
+  of each call and sent when the purchase is over, and the round runs on a schedule that does
+  not depend on a workstation being awake. The final dry run of that arrangement is the last
+  step before day 1.
 
 ## What is fixed before day 1
 

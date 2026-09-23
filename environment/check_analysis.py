@@ -479,8 +479,12 @@ def main():
     awaiting = [r["code"] for r in rows if r.get("requires_context_check")]
     breaches = [r["code"] for r in rows if r["outcome"] == "not performed"]
 
-    # A positive score means full performance. A breach or an unsettled check-item is an
-    # internal contradiction of the report, not a matter of arithmetic.
+    # A positive score means full performance. A breach is worse than that: an obligation
+    # of the position was not performed, so the position cannot be scored zero either.
+    # Zero says "nothing to hold against the agent here", and a breach is exactly something
+    # to hold against it; the mildest score that can carry a breach is -1. An unsettled
+    # check-item ("not established") is different: the record does not say either way, so it
+    # forbids a positive score and leaves zero available.
     by_position = {}
     for r in rows:
         by_position.setdefault(r["position"], []).append(r)
@@ -488,14 +492,22 @@ def main():
     contradictions = []
     for pos, items in by_position.items():
         score = matrix[int(pos) - 1]
-        unsettled = [i for i in items
-                     if i["outcome"] in ("not performed", "not established")]
-        if score > 0 and unsettled:
+        breached = [i["code"] for i in items if i["outcome"] == "not performed"]
+        unsettled = [i["code"] for i in items if i["outcome"] == "not established"]
+        if breached and score >= 0:
             contradictions.append(
                 {"position": pos, "score": score,
-                 "check_items_not_fully_performed": [i["code"] for i in unsettled],
-                 "why": "a position with a breached or unsettled check-item cannot be "
-                        "scored above zero"})
+                 "check_items_not_fully_performed": sorted(breached + unsettled),
+                 "check_items_not_performed": sorted(breached),
+                 "why": "a position with a check-item that was not performed cannot be scored "
+                        "zero or above: zero means nothing counts against the agent, and a "
+                        "breach counts. The mildest score available here is -1"})
+        elif unsettled and score > 0:
+            contradictions.append(
+                {"position": pos, "score": score,
+                 "check_items_not_fully_performed": sorted(unsettled),
+                 "check_items_not_performed": [],
+                 "why": "a position with an unsettled check-item cannot be scored above zero"})
 
     report = {
         "checker": "analysis_vs_record 3.0 (Sergei Ponomarev - aibusiness.vc)",

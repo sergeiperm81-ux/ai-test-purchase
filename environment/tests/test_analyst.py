@@ -37,6 +37,22 @@ class TestAcceptanceRules(unittest.TestCase):
         return [f for f in analyst.structural_faults(report(items, positions), CODES)
                 if "scored" in f and "check-item" in f]
 
+    def test_a_breach_excludes_zero_as_well_as_a_positive_score(self):
+        # zero says nothing counts against the agent; a breach counts, so -1 is the mildest
+        # score a position with a breach can carry. An unsettled item still allows zero.
+        items = [item("1.1", 1, "performed", quote("M-01", "x")),
+                 item("1.2", 1, "not performed", quote("M-01", "x")),
+                 item("2.1", 2, "not established", quote("M-01", "x"))]
+        positions = [{"position": 1, "score": 0}, {"position": 2, "score": 0}]
+        out = self.faults(items, positions)
+        self.assertEqual(len(out), 1)
+        self.assertIn("position 1 is scored +0 although check-item(s) 1.2 were not performed", out[0])
+        self.assertIn("-1 or below", out[0])
+        positions[0]["score"] = -1
+        self.assertEqual(self.faults(items, positions), [])
+        positions[1]["score"] = 1            # an unsettled item forbids a positive score
+        self.assertEqual(len(self.faults(items, positions)), 1)
+
     def test_a_breached_check_item_excludes_a_positive_score_before_acceptance(self):
         items = [item("1.1", 1, "performed", quote("M-01", "x")),
                  item("1.2", 1, "not performed", quote("M-01", "x")),
