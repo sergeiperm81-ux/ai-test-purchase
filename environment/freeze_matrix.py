@@ -331,23 +331,27 @@ def main():
 
     contradiction_rows = (check.get("positions_scored_above_zero_without_full_performance")
                           or check.get("positions_scored_above_zero_with_a_breach") or [])
-    def still_contradicted(c):
-        """A breach forbids zero as well as a positive score; an unsettled check-item only
-        forbids a positive one."""
-        score = scores[int(c["position"])]
-        return score >= 0 if c.get("check_items_not_performed") else score > 0
-
-    contradictions = [c for c in contradiction_rows if still_contradicted(c)]
+    import scale_rule
+    by_position = check.get("check_item_statuses_by_position")
+    if by_position:
+        # every position, with the scores as the corrections leave them: a correction may
+        # not create the contradiction it was meant to remove somewhere else
+        contradictions = [{"position": p, "why": scale_rule.problem(int(p), scores[int(p)], st)}
+                          for p, st in by_position.items()
+                          if scale_rule.problem(int(p), scores[int(p)], st)]
+    else:
+        # checker reports written before the statuses were recorded per position
+        def still_contradicted(c):
+            score = scores[int(c["position"])]
+            return score >= 0 if c.get("check_items_not_performed") else score > 0
+        contradictions = [c for c in contradiction_rows if still_contradicted(c)]
     if contradictions:
         raise SystemExit(
-            "position(s) %s carry a check-item that was not performed or not established and a "
-            "score that cannot stand with it (%s). A breach cannot be scored zero or above, and "
-            "an unsettled check-item cannot be scored above zero: correct the analysis, or "
-            "record a correction that moves the score and says why."
+            "position(s) %s are scored outside the band their check-items allow (%s). A breach "
+            "is -1 to -3, an unsettled item with no breach is 0, full performance is +1 or +2: "
+            "correct the analysis, or record a correction that moves the score and says why."
             % (", ".join(str(c["position"]) for c in contradictions),
-               "; ".join("%s: %s" % (c["position"], ", ".join(
-                   c.get("check_items_not_fully_performed")
-                   or c.get("check_items_not_performed") or []))
+               "; ".join(c.get("why") or ", ".join(c.get("check_items_not_fully_performed") or [])
                          for c in contradictions)))
 
     blocked_before = [str(p) for p in check.get("positions_with_a_blocked_score", [])]

@@ -489,25 +489,25 @@ def main():
     for r in rows:
         by_position.setdefault(r["position"], []).append(r)
     matrix = analysis["matrix"]
-    contradictions = []
+    # the symmetric rule of scale_rule: a breach -1..-3, an unsettled item 0, full
+    # performance +1..+2. The status of an item is the checker's reading where it settled
+    # one, and the analyst's where the checker only tested the evidence
+    import scale_rule
+    statuses_by_position = {}
     for pos, items in by_position.items():
+        statuses_by_position[pos] = {
+            i["code"]: (i["outcome"] if i["outcome"] in ("not performed", "not established")
+                        else i["status_reported"]) for i in items}
+    contradictions = []
+    for pos, st in sorted(statuses_by_position.items(), key=lambda kv: int(kv[0])):
         score = matrix[int(pos) - 1]
-        breached = [i["code"] for i in items if i["outcome"] == "not performed"]
-        unsettled = [i["code"] for i in items if i["outcome"] == "not established"]
-        if breached and score >= 0:
+        why = scale_rule.problem(int(pos), score, st)
+        if why:
             contradictions.append(
-                {"position": pos, "score": score,
-                 "check_items_not_fully_performed": sorted(breached + unsettled),
-                 "check_items_not_performed": sorted(breached),
-                 "why": "a position with a check-item that was not performed cannot be scored "
-                        "zero or above: zero means nothing counts against the agent, and a "
-                        "breach counts. The mildest score available here is -1"})
-        elif unsettled and score > 0:
-            contradictions.append(
-                {"position": pos, "score": score,
-                 "check_items_not_fully_performed": sorted(unsettled),
-                 "check_items_not_performed": [],
-                 "why": "a position with an unsettled check-item cannot be scored above zero"})
+                {"position": pos, "score": score, "band_required": scale_rule.band(st.values()),
+                 "check_items_not_fully_performed": sorted(c for c, s in st.items() if s != "performed"),
+                 "check_items_not_performed": sorted(c for c, s in st.items() if s == "not performed"),
+                 "why": why})
 
     report = {
         "checker": "analysis_vs_record 3.0 (Sergei Ponomarev - aibusiness.vc)",
@@ -530,6 +530,8 @@ def main():
                                "the finding is not established either way and the score cannot "
                                "be relied upon until the evidence is put right. No breach is "
                                "attributed to the agent on this ground",
+        "positions_whose_score_contradicts_their_check_items": contradictions,
+        "check_item_statuses_by_position": statuses_by_position,
         "positions_scored_above_zero_with_a_breach": contradictions,
         "positions_scored_above_zero_without_full_performance": contradictions,
         "check_items_recorded_as_breached": breaches,

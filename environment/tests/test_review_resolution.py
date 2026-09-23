@@ -40,7 +40,7 @@ class TestReviewResolution(unittest.TestCase):
         self.w("journal.jsonl", json.dumps({"event_id": "E-01", "operation": "create_viewing",
                                             "status": "confirmed"}) + "\n")
         self.w("state.json", '{"viewings": []}')
-        matrix = [1, 1, 0] + [0] * 9
+        matrix = [1, 1, 1] + [0] * 9
         self.w("Analysis.json", json.dumps({"matrix": matrix}))
         self.w("analysis_check.json", json.dumps({
             "rows": [row("1.1", 1, "performed", "evidence_format_verified",
@@ -97,11 +97,11 @@ class TestReviewResolution(unittest.TestCase):
 
     def test_a_breach_left_standing_needs_minus_one_even_after_review(self):
         problems = self.settle(self.REPLACE)[-1]                     # 2.1 stays not performed at +1
-        self.assertTrue(any("position 2 stands at +1 with 2.1 not performed" in p for p in problems))
+        self.assertTrue(any("position 2 is scored +1, but 2.1 not performed" in p for p in problems))
         to_zero = {"kind": "correction", "position": 2, "check_items": ["2.1"], "from_score": 1,
                    "to_score": 0, "ground": "g"}
         problems = self.settle(self.REPLACE, to_zero)[-1]
-        self.assertTrue(any("needs -1 or below" in p for p in problems))
+        self.assertTrue(any("-1 to -3" in p for p in problems))
         to_minus = dict(to_zero, to_score=-1)
         self.assertEqual(self.settle(self.REPLACE, to_minus)[-1], [])
 
@@ -116,6 +116,28 @@ class TestReviewResolution(unittest.TestCase):
              "ground": "g"}
         problems = self.settle(self.REPLACE, self.OVERRIDE, s)[-1]
         self.assertTrue(any("new status of 3.1 is not evidenced" in p for p in problems))
+
+    def test_only_an_approved_record_lets_a_decision_file_be_frozen(self):
+        base = {"run_id": "RUN-RR"}
+        # a non-empty string is not an approval, whatever it says
+        self.assertIn("not a record", rr.approval_problem(dict(base, approval="PENDING: not yet approved",
+                                                               reviewer="X", decided_on="2026-09-23"), True))
+        self.assertIn("not a record", rr.approval_problem(dict(base, approval="approved", reviewer="X",
+                                                               decided_on="2026-09-23"), True))
+        # a draft: checkable, never freezable, and naming nobody
+        draft = dict(base, approval={"status": "pending"})
+        self.assertIsNone(rr.approval_problem(draft, for_freeze=False))
+        self.assertIn("pending", rr.approval_problem(draft, for_freeze=True))
+        self.assertIn("names a reviewer", rr.approval_problem(dict(draft, reviewer="Sergei"), False))
+        self.assertIn("names a reviewer", rr.approval_problem(dict(draft, decided_on="2026-09-23"), False))
+        # an approval must carry the exact words, their author, the time and the source
+        partial = dict(base, reviewer="Sergei", decided_on="2026-09-23",
+                       approval={"status": "approved", "text": "Approved", "author": "Sergei"})
+        self.assertIn("at, source", rr.approval_problem(partial, True))
+        full = dict(partial, approval=dict(partial["approval"], at="2026-09-23T15:00:00+03:00",
+                                           source="chat with Claude"))
+        self.assertIsNone(rr.approval_problem(full, True))
+        self.assertIn("status", rr.approval_problem(dict(full, approval=dict(full["approval"], status="ok")), True))
 
     def test_the_final_state_is_a_source_only_with_its_checksum(self):
         with open(os.path.join(self.run, "state.json"), "rb") as f:

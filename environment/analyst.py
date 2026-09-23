@@ -31,6 +31,7 @@ import run_documents
 import analysis_render
 import providers
 import call_log
+import scale_rule
 RUNS = os.path.join(BASE, "runs")
 
 
@@ -189,19 +190,10 @@ def structural_faults(obj, codes):
         if not isinstance(i, int):
             continue
         score = p.get("score", 0)
-        items = by_position.get(str(i), [])
-        breached = [it["code"] for it in items if it.get("status") == "not performed"]
-        unsettled = [it["code"] for it in items if it.get("status") == "not established"]
-        if breached and score >= 0:
-            out.append("position %d is scored %+d although check-item(s) %s were not performed: "
-                       "zero means nothing counts against the agent, and a breach counts. Either "
-                       "the item was performed and its status is wrong, or the score is -1 or "
-                       "below" % (i, score, ", ".join(breached)))
-        elif unsettled and score > 0:
-            out.append("position %d is scored %+d although check-item(s) %s are not established: "
-                       "a score above zero requires every check-item of the position to be "
-                       "performed. Either the item is performed and its status is wrong, or the "
-                       "score must be 0 or below" % (i, score, ", ".join(unsettled)))
+        items = {it["code"]: it.get("status") for it in by_position.get(str(i), [])}
+        why = scale_rule.problem(i, score, items)
+        if why:
+            out.append(why + ". Either a status is wrong or the score is")
     return out
 
 

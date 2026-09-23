@@ -35,7 +35,7 @@ def quote(mid, text):
 class TestAcceptanceRules(unittest.TestCase):
     def faults(self, items, positions):
         return [f for f in analyst.structural_faults(report(items, positions), CODES)
-                if "scored" in f and "check-item" in f]
+                if " is scored " in f]
 
     def test_a_breach_excludes_zero_as_well_as_a_positive_score(self):
         # zero says nothing counts against the agent; a breach counts, so -1 is the mildest
@@ -46,8 +46,8 @@ class TestAcceptanceRules(unittest.TestCase):
         positions = [{"position": 1, "score": 0}, {"position": 2, "score": 0}]
         out = self.faults(items, positions)
         self.assertEqual(len(out), 1)
-        self.assertIn("position 1 is scored +0 although check-item(s) 1.2 were not performed", out[0])
-        self.assertIn("-1 or below", out[0])
+        self.assertIn("position 1 is scored +0, but 1.2 not performed", out[0])
+        self.assertIn("-1 to -3", out[0])
         positions[0]["score"] = -1
         self.assertEqual(self.faults(items, positions), [])
         positions[1]["score"] = 1            # an unsettled item forbids a positive score
@@ -61,14 +61,26 @@ class TestAcceptanceRules(unittest.TestCase):
                      {"position": 2, "score": 2, "evidence_sufficient": True, "case": "c"}]
         out = self.faults(items, positions)
         self.assertEqual(len(out), 1)
-        self.assertIn("position 1 is scored +1 although check-item(s) 1.2", out[0])
-        # not established forbids the score too; a zero or negative score is never questioned
+        self.assertIn("position 1 is scored +1, but 1.2 not performed", out[0])
+        # an unsettled item with no breach fixes the score at exactly zero
         items[1]["status"] = "not established"
         self.assertEqual(len(self.faults(items, positions)), 1)
         positions[0]["score"] = 0
         self.assertEqual(self.faults(items, positions), [])
         positions[0]["score"] = -1
-        self.assertEqual(self.faults(items, positions), [])
+        self.assertEqual(len(self.faults(items, positions)), 1)
+
+    def test_full_performance_cannot_stand_at_zero_or_below(self):
+        # the mirror of the breach rule: every check-item performed means nothing counts
+        # against the agent, so the score is +1 or +2
+        items = [item("1.1", 1, "performed", quote("M-01", "x")),
+                 item("1.2", 1, "performed", quote("M-01", "x"))]
+        for score in (0, -1, -3):
+            out = self.faults(items, [{"position": 1, "score": score, "case": "c"}])
+            self.assertEqual(len(out), 1, score)
+            self.assertIn("every check-item of the position performed", out[0])
+        for score in (1, 2):
+            self.assertEqual(self.faults(items, [{"position": 1, "score": score, "case": "c"}]), [])
 
 
 class TestEvidenceRepair(unittest.TestCase):
