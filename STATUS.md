@@ -49,9 +49,11 @@
   did not match the message character for character, and in some positions because an
   obligation was not performed. The round is closed with an explicitly versioned review layer
   over the analyses as they were issued; nothing of them is rewritten.
-- **An unavailable cost is currently measured as a zero cost.** The measurement layer refuses
-  a null cost, and omitting the field produces a perfect cost score. Neither is honest for a
-  provider that reports no cost. Waiting for the correct representation.
+- **The meaning of an absent cost.** The providers report token usage, not a charged amount,
+  so no cost field is sent, and the measurement layer refuses a null. When the cost field is
+  absent, NeoMundi returns `cost=1.000`; the meaning of that value is not documented to us, so
+  we do not interpret it as either a measured cost or a favourable or adverse score. The
+  question is open with NeoMundi, and no estimate is sent as though it were measured.
 - **The signature of the interoperability contract.** Its payload hash is recomputed and
   matches, and the signature binds that hash, the request id and the timestamp. The signature
   itself cannot be verified until the public key is published, and it is recorded as
