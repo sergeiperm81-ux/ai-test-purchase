@@ -143,8 +143,21 @@ def approval_problem(r, for_freeze):
         return "the approval is pending: nothing is frozen until it is given" if for_freeze else None
     if status != "approved":
         return "the approval status is %r: it is pending or approved" % status
-    missing = [k for k in APPROVAL_FIELDS if not str(a.get(k) or "").strip()]
-    missing += [k for k in ("reviewer", "decided_on") if not str(r.get(k) or "").strip()]
+    missing = [k for k in ("reviewer", "decided_on") if not str(r.get(k) or "").strip()]
+    messages = a.get("messages")
+    if messages is not None:
+        # the approval as given: every message on its own, verbatim, with its own time and
+        # source. Nothing written by anyone else is put between them
+        if not isinstance(messages, list) or not messages:
+            return "approval.messages is a non-empty list of the reviewer's own messages"
+        for i, m in enumerate(messages, 1):
+            gap = [k for k in APPROVAL_FIELDS if not str((m or {}).get(k) or "").strip()]
+            if gap:
+                return "approval message %d must state %s" % (i, ", ".join(gap))
+            if m.get("author") != a.get("author", m.get("author")):
+                return "approval message %d has another author than the approval" % i
+    else:
+        missing += [k for k in APPROVAL_FIELDS if not str(a.get(k) or "").strip()]
     if missing:
         return "an approved decision must state %s" % ", ".join(missing)
     return None

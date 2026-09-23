@@ -139,6 +139,20 @@ class TestReviewResolution(unittest.TestCase):
         self.assertIsNone(rr.approval_problem(full, True))
         self.assertIn("status", rr.approval_problem(dict(full, approval=dict(full["approval"], status="ok")), True))
 
+    def test_an_approval_given_in_several_messages_keeps_them_apart(self):
+        base = {"run_id": "RUN-RR", "reviewer": "Sergei", "decided_on": "2026-09-23"}
+        one = {"text": "I approve version 4", "author": "Sergei", "at": "2026-09-23T11:27:27Z", "source": "chat, uuid a"}
+        two = {"text": "Card 10, minus 1, yes.", "author": "Sergei", "at": "2026-09-23T11:28:45Z", "source": "chat, uuid b"}
+        ok = dict(base, approval={"status": "approved", "author": "Sergei", "messages": [one, two]})
+        self.assertIsNone(rr.approval_problem(ok, True))
+        no_time = dict(base, approval={"status": "approved", "author": "Sergei", "messages": [one, dict(two, at="")]})
+        self.assertIn("message 2 must state at", rr.approval_problem(no_time, True))
+        someone_else = dict(base, approval={"status": "approved", "author": "Sergei",
+                                            "messages": [one, dict(two, author="Codex")]})
+        self.assertIn("another author", rr.approval_problem(someone_else, True))
+        self.assertIn("non-empty list", rr.approval_problem(
+            dict(base, approval={"status": "approved", "author": "Sergei", "messages": []}), True))
+
     def test_the_final_state_is_a_source_only_with_its_checksum(self):
         with open(os.path.join(self.run, "state.json"), "rb") as f:
             good = hashlib.sha256(f.read()).hexdigest()
