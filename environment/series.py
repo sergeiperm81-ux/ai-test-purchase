@@ -607,9 +607,14 @@ def analyse(run_id, pl, run_analyst=True):
         status_path = os.path.join(run_dir, "RUN_STATUS.md")
         if not os.path.exists(status_path):
             with open(status_path, "w", encoding="utf-8", newline="") as f:
+                # written before the freeze and pinned by it, so it must be true of the run
+                # both when the freeze succeeds and when the run is left for review
                 f.write("# RUN_STATUS: DIAGNOSTIC / NOT COUNTED\n\nRun %s belongs to the technical "
-                        "rehearsal %s. It is analysed, checked and frozen like a counted purchase, "
-                        "and it is not a result of the pilot.\n" % (run_id, pl["series"]))
+                        "rehearsal %s. It is analysed and checked like a counted purchase, and it is "
+                        "not a result of the pilot. It is frozen only once every position is "
+                        "settled; until then it waits for the reviewer. Its state is in the "
+                        "registry of the rehearsal and, once frozen, in its freeze_manifest.json.\n"
+                        % (run_id, pl["series"]))
     code, out, err = run_cmd(["freeze_matrix.py", run_dir, "--no-anchor"])
     run_cmd(["cost.py", run_dir])
     if code != 0:
