@@ -1,6 +1,6 @@
 {
  "what_this_is": "The configurations of the series and how each is reached: configuration_id, provider, endpoint, protocol, the NAME of the environment variable holding its key, the rate_key it is priced by, the output limit and the model ids the provider is expected to report. Keys never appear here. The list is fixed at the plan of the series; series.py refuses any configuration, the analyst's included, whose observed model ids are not pinned.",
- "version": "1.0-rc9, 17.09.2026: all nine configurations pinned from setup checks; analyst gpt-5.4-mini-2026-03-17 with reasoning off",
+ "version": "1.0, 23.09.2026: all nine configurations pinned from setup checks; analyst gpt-5.4-mini-2026-03-17 with reasoning off; NeoMundi observations under tp-projection/1, boundary frozen with NeoMundi, sent when the purchase is over",
  "pilot": {
   "pilot_id": "NEOMUNDI-AIBUSINESS-TP-2026",
   "scenario_id": "MARINA-KEYS-VIEWING-2026-09"
@@ -46,7 +46,15 @@
   "max_prompt_chars": 10000,
   "prompt_projection": "tp-projection/1",
   "send": "deferred",
-  "max_parallel_sends": 4
+  "max_parallel_sends": 4,
+  "measurement_boundary": {
+   "projection": "tp-projection/1",
+   "frozen_on": "2026-09-23",
+   "confirmed_by": "NeoMundi, Sébastien Favre-Lecca, by email",
+   "what_neomundi_measures": "the verbatim new input and the exact model response",
+   "what_it_does_not_see": "the fixed documents and the prior dialogue, which are represented by integrity commitments only",
+   "open_interoperability_item": "the public key of the contract signing key (neomundi-rgc-2026-01) is not published to us, so contract signatures are hash-checked locally and not cryptographically verified"
+  }
  },
  "models": [
   {

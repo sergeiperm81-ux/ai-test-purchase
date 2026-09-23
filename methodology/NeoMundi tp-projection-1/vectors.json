@@ -1,0 +1,41 @@
+{
+ "projection": "tp-projection/1",
+ "code_file": "projection.py.txt",
+ "code_sha256": "4f7ffa314edb4e3e5b04b30c3d45a6084701e77bee9731197d4b7f9be5fc9353",
+ "vectors": [
+  {
+   "vector": "vector-1",
+   "what": "an ordinary call: the new input is the customer's line",
+   "provider_request_file": "vector-1.provider-request.json",
+   "provider_request_sha256": "55542d8ab486538d2857d1015c12e35225c8f3ee7e982761e61b920d4484eaf6",
+   "provider_request_chars": 117423,
+   "limit": 10000,
+   "projection_file": "vector-1.projection.json",
+   "projection_sha256": "6bd94b5ac2820a17c5ab9f9da36c1a02c2992967fa68039c6adc373199f2ab3e",
+   "projection_chars": 959,
+   "withheld": []
+  },
+  {
+   "vector": "vector-2",
+   "what": "the call that returns the receipt data package: one tool result withheld",
+   "provider_request_file": "vector-2.provider-request.json",
+   "provider_request_sha256": "c8288e91ed625793fda4a61090e03a51c1cae3e28ff1ec8b165aeb364aaf428a",
+   "provider_request_chars": 151810,
+   "limit": 10000,
+   "projection_file": "vector-2.projection.json",
+   "projection_sha256": "f1419a5b890868b10886f1b7a0e0ee4ca9ac4bdafaf01edaeeb74366216af31f",
+   "projection_chars": 1093,
+   "withheld": [
+    {
+     "block": null,
+     "chars": 12033,
+     "message": 0,
+     "sha256": "4ba2d669ee7cb3ae522e94066c30b0f95fd7e953b60f5e09f7b1cb126db84ef1"
+    }
+   ]
+  }
+ ],
+ "specification": "SPECIFICATION.md",
+ "specification_sha256": "4c0590843c8d69d120280fcd8f98e0d5ebd45b408187a2f4913a7fc462d34e8f",
+ "status": "frozen with NeoMundi on 2026-09-23 (email confirmation of the measurement boundary)"
+}

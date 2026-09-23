@@ -7,8 +7,8 @@ NeoMundi accepts at most 10,000 characters in llm_prompt (confirmed by NeoMundi 
 21.09.2026: a limit of the present API, not a setting). A real call of a test purchase is
 115,000 to 161,000 characters, because every call carries the documents the agent works
 under and the whole dialogue so far. So instead of the request itself NeoMundi receives
-its projection, a deterministic function of the exact request bytes, agreed with NeoMundi
-and identified by its name:
+its projection, a deterministic function of the exact request bytes, frozen with NeoMundi
+(confirmed by email on 23.09.2026) and identified by its name:
 
   tp-projection/1
     full_request  the SHA-256 and the length of the exact request we sent the provider;
