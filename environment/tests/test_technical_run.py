@@ -97,7 +97,9 @@ class TestTechnicalRun(unittest.TestCase):
 
     def keys(self, *skip):
         for k in KEYS:
-            if k not in skip:
+            if k in skip:
+                os.environ.pop(k, None)      # absent even where the machine has the real one
+            else:
                 os.environ[k] = "stand-in"
 
     def confirm_command_a(self, sid, folder):
