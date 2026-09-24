@@ -66,7 +66,10 @@ PY = sys.executable
 
 LABELS = "ABCDEFGHIJKL"
 STOP_DAY = ("budget_exceeded", "model_drift")
-COMPLETE = ("frozen", "pending_review", "pending_measurement", "analysis_failed")
+# "unresolved": the record of the purchase is frozen and its score is not confirmed by the
+# evidence; it is complete, and it is not counted in any mean
+COMPLETE = ("frozen", "unresolved", "pending_review", "pending_measurement", "analysis_failed")
+PINNED = ("frozen", "unresolved")
 # exit codes of harness.py and analyst.py: 3 is retried; 4, 5, 6 are not; 5 and 6 stop the day
 HARNESS_STOPS = {3: "technical", 4: "limit", 5: "drift", 6: "budget"}
 NOT_COUNTED = {"technical": "technical_failure", "limit": "limit_exceeded",
@@ -594,9 +597,9 @@ def analyse(run_id, pl, run_analyst=True):
     if not os.path.exists(corr):
         jdump(corr, {"run_id": run_id,
                      "decided_on": datetime.date.today().isoformat(),
-                     "reviewer": "automatic freeze of the series: no reviewer correction "
-                                 "recorded. A position the checker leaves blocked stays "
-                                 "pending until the reviewer records one",
+                     "reviewer": "automatic freeze of the series: no reviewer correction. A "
+                                 "score the checker cannot confirm is frozen as unresolved and "
+                                 "is not counted in any mean",
                      "corrections": []})
     ok, detail = measurement(run_dir, pl)
     if not ok:
@@ -610,16 +613,21 @@ def analyse(run_id, pl, run_analyst=True):
                 # written before the freeze and pinned by it, so it must be true of the run
                 # both when the freeze succeeds and when the run is left for review
                 f.write("# RUN_STATUS: DIAGNOSTIC / NOT COUNTED\n\nRun %s belongs to the technical "
-                        "rehearsal %s. It is analysed and checked like a counted purchase, and it is "
-                        "not a result of the pilot. It is frozen only once every position is "
-                        "settled; until then it waits for the reviewer. Its state is in the "
-                        "registry of the rehearsal and, once frozen, in its freeze_manifest.json.\n"
+                        "rehearsal %s. It is analysed, checked and its record frozen like a counted "
+                        "purchase, and it is not a result of the pilot. Whether its score is "
+                        "confirmed or unresolved is stated in its freeze_manifest.json.\n"
                         % (run_id, pl["series"]))
-    code, out, err = run_cmd(["freeze_matrix.py", run_dir, "--no-anchor"])
+    code, out, err = run_cmd(["freeze_matrix.py", run_dir, "--no-anchor", "--or-unresolved"])
     run_cmd(["cost.py", run_dir])
     if code != 0:
-        notes.append("freeze pending: " + (err or out).strip().splitlines()[-1][:200])
+        notes.append("freeze failed: " + (err or out).strip().splitlines()[-1][:200])
         return "pending_review", notes
+    manifest = os.path.join(run_dir, "freeze_manifest.json")
+    if os.path.exists(manifest) and jload(manifest).get("score_status") == "unresolved":
+        unresolved = jload(os.path.join(run_dir, "Score-unresolved.json"))
+        notes.append("record frozen, score unresolved (%s): position(s) %s"
+                     % (unresolved["why"], ", ".join(unresolved["positions"])))
+        return "unresolved", notes
     notes.append("frozen")
     return "frozen", notes
 
@@ -891,7 +899,7 @@ def day_anchor(sid, folder, pl, d):
                                     "run_manifest_sha256": sha256_file(rm)}
     missing = [l for l in d["order"] if l not in runs]
     pending = [l for l in d["order"]
-               if l in runs and runs[l]["status"] != "frozen"]
+               if l in runs and runs[l]["status"] not in PINNED]
     out = {"what_this_is": "the anchor of one day of the series: it pins the manifest of "
                            "every complete purchase of the day and lists every attempt. "
                            "The matrices are pinned by the week anchor, once the reviewer "

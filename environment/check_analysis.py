@@ -150,12 +150,34 @@ def quoted_words(text):
     return t
 
 
+BOLD_RULE = ("the bold markers ** and __ are removed from both the quotation and the message "
+             "before they are compared; nothing else is changed: case, punctuation, apostrophes, "
+             "dashes and every other character must match")
+
+
+def strip_bold(t):
+    return (t or "").replace("**", "").replace("__", "")
+
+
+def quote_match(words, message_text):
+    """How the quotation matched: "exact", "bold markers removed" (BOLD_RULE), or None.
+    The second tells that the words are the same; it does not confirm what they mean."""
+    if not words:
+        return None
+    if words in message_text:
+        return "exact"
+    if strip_bold(words) and strip_bold(words) in strip_bold(message_text):
+        return "bold markers removed"
+    return None
+
+
 def quote_problem(words, message_text, key):
     """Why the words are not a quotation of the message, or None when they are in it
-    exactly. A short identifier or figure (A-712, 71.0 m2) is checked the same way."""
+    exactly or under BOLD_RULE. A short identifier or figure (A-712, 71.0 m2) is checked
+    the same way."""
     if not words:
         return "no quotation is given"
-    if words in message_text:
+    if quote_match(words, message_text):
         return None
     if "…" in words or "..." in words:
         return ("an ellipsis is not a quotation: quote one contiguous passage of %s "
@@ -471,6 +493,9 @@ def main():
             row["outcome"] = ("unsupported assessment" if row["problems"]
                               else ("evidence_format_verified" if it["status"] == "performed"
                                     else "not performed"))
+            if ev.get("type") == "quote" and not row["problems"]:
+                holder, text = known.get(ev.get("message_id"), (None, ""))
+                row["quote_match"] = quote_match(quoted_words(ev.get("text")), text)
         rows.append(row)
 
     BLOCKING = ("unsupported assessment", "awaiting_context_check")
@@ -531,6 +556,9 @@ def main():
                                "be relied upon until the evidence is put right. No breach is "
                                "attributed to the agent on this ground",
         "positions_whose_score_contradicts_their_check_items": contradictions,
+        "quotation_rule": BOLD_RULE,
+        "quotations_matched_only_without_bold_markers": sorted(
+            r["code"] for r in rows if r.get("quote_match") == "bold markers removed"),
         "check_item_statuses_by_position": statuses_by_position,
         "positions_scored_above_zero_with_a_breach": contradictions,
         "positions_scored_above_zero_without_full_performance": contradictions,

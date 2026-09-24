@@ -77,7 +77,7 @@ class TestReviewResolution(unittest.TestCase):
 
     def test_a_replacement_must_pass_the_checker_and_answer_a_blocked_item(self):
         bad = dict(self.REPLACE, evidence={"1.2": {"type": "quote", "message_id": "M-01",
-                                                   "text": "I recommend A-712 over A-518."}})
+                                                   "text": "I would recommend A-712 over A-518."}})
         problems = self.settle(bad, self.OVERRIDE)[-1]
         self.assertTrue(any("does not pass the checker" in p for p in problems))
         unblocked = dict(self.REPLACE, check_items=["1.1"],
@@ -163,6 +163,28 @@ class TestReviewResolution(unittest.TestCase):
         self.assertTrue(rr.admissible(self.run, ev, known))
         ev["sources"] = ["M-01", "final state"]
         self.assertTrue(any("not identifiers of this run" in p for p in rr.admissible(self.run, ev, known)))
+
+
+class TestUnresolvedInTheReport(unittest.TestCase):
+    """A purchase whose score is unresolved stays out of every mean, its share is shown per
+    model, and above the threshold the comparison across models is withheld."""
+
+    def test_shares_and_the_threshold(self):
+        import series_report as sr
+        pl = {"labels": ["A", "B"]}
+        data = {"A": [{"day": 1, "frozen": True, "raw": 5, "index": 0, "critical": 0, "best": 0, "matrix": [0] * 12},
+                      {"day": 2, "frozen": False, "unresolved": True}],
+                "B": [{"day": 1, "frozen": True, "raw": -3, "index": 9, "critical": 0, "best": 0, "matrix": [0] * 12},
+                      {"day": 2, "frozen": True, "raw": -1, "index": 3, "critical": 0, "best": 0, "matrix": [0] * 12}]}
+        shares = sr.unresolved_shares(pl, data)
+        self.assertEqual(shares["A"], (1, 2, 0.5))
+        self.assertEqual(shares["B"], (0, 2, 0.0))
+        self.assertEqual(sr.withheld(shares, 0.2), ["A"])
+        self.assertEqual(sr.withheld(shares, 0.5), [])            # at the threshold, not above it
+        rows = sr.table(pl, data, [1, 2], compare=True)
+        self.assertIn("| A | 2 | 2 | 1 | 1 (50%) | 0 | 0 | 5.00 |", rows[2])   # the mean is over the confirmed score only
+        rows = sr.table(pl, data, [1, 2], compare=False)
+        self.assertIn("withheld", rows[3])
 
 
 if __name__ == "__main__":

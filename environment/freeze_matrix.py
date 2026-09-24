@@ -225,6 +225,55 @@ def check_item_positions(path):
     return out
 
 
+RECORD_FILES = ("matrix_corrections.json", "Analysis.json", "Analysis.md", "analysis_check.json",
+                "validation_report.json", "AI-receipt-section-II.json", "AI-receipt-customer-copy.md",
+                "journal.jsonl", "messages.jsonl", "manifest.json", "worksheet-as-analysed.txt",
+                "deterministic_rules-as-analysed.json", "RUN_STATUS.md")
+
+
+def freeze_unresolved(run_dir, corrections, issued, check, kind, positions, reasons):
+    """The record of the purchase is frozen and its score is not. Two results kept apart:
+    the transcript, the journal, the receipt, the analysis and the checker's report are
+    pinned exactly as they are, so nothing can change later; the score is marked unresolved
+    with the reason, and it is not a result. A series report leaves it out of every mean and
+    shows, per model, how many scores are unresolved."""
+    run_id = corrections["run_id"]
+    record = {
+        "run_id": run_id,
+        "score_status": "unresolved",
+        "why": kind,
+        "positions": positions,
+        "reasons": [r for r in reasons if r],
+        "matrix_as_issued_by_the_analyst_not_a_result": [issued[p] for p in range(1, POSITIONS + 1)],
+        "what_this_means": "the record of this purchase is frozen; its score is not confirmed by "
+                           "the evidence and is not counted in any mean. The analyst's matrix is "
+                           "kept for reference only",
+        "checker_outcomes": check.get("outcomes"),
+        "quotation_rule": check.get("quotation_rule"),
+        "frozen_on": corrections.get("decided_on"),
+    }
+    with open(os.path.join(run_dir, "Score-unresolved.json"), "w", encoding="utf-8", newline="") as f:
+        json.dump(record, f, ensure_ascii=False, indent=1)
+    freeze = {"score_status": "unresolved",
+              "what_this_is": "the checksums of the record of a purchase whose score is unresolved: "
+                              "the record is frozen, the score is not a result",
+              "run_id": run_id, "frozen_on": record["frozen_on"],
+              "reviewer": corrections.get("reviewer"), "files": {}}
+    for name in ("Score-unresolved.json",) + RECORD_FILES:
+        freeze["files"][name] = sha256_file(os.path.join(run_dir, name))
+    for path in sorted(glob.glob(os.path.join(run_dir, "analysis-input.*.txt"))):
+        freeze["files"][os.path.basename(path)] = sha256_file(path)
+    for folder in ("documents-as-analysed", "documents-at-start"):
+        fp = os.path.join(run_dir, folder)
+        if os.path.isdir(fp):
+            for name in sorted(os.listdir(fp)):
+                freeze["files"][folder + "/" + name] = sha256_file(os.path.join(fp, name))
+    with open(os.path.join(run_dir, "freeze_manifest.json"), "w", encoding="utf-8", newline="") as f:
+        json.dump(freeze, f, ensure_ascii=False, indent=1)
+    print("record frozen, score UNRESOLVED (%s): position(s) %s" % (kind, ", ".join(positions)))
+    return record
+
+
 def main():
     if len(sys.argv) < 2:
         raise SystemExit("usage: python freeze_matrix.py <run_dir> [--no-anchor]")
@@ -232,6 +281,9 @@ def main():
     # in a series the anchor of the day pins the freeze manifests of its runs; one external
     # anchor per purchase would turn the folder of anchors into a heap
     write_anchor = "--no-anchor" not in sys.argv[2:]
+    # in a series nobody reviews by hand: a score that cannot be confirmed does not hold the
+    # purchase back. The record is frozen and the score is marked unresolved instead
+    or_unresolved = "--or-unresolved" in sys.argv[2:]
     corr_path = os.path.join(run_dir, "matrix_corrections.json")
     corrections = fsio.read_json(corr_path)
     identity = one_run_only(run_dir, corrections)
@@ -345,6 +397,10 @@ def main():
             score = scores[int(c["position"])]
             return score >= 0 if c.get("check_items_not_performed") else score > 0
         contradictions = [c for c in contradiction_rows if still_contradicted(c)]
+    if contradictions and or_unresolved:
+        return freeze_unresolved(run_dir, corrections, issued, check, "score outside the band",
+                                 [str(c["position"]) for c in contradictions],
+                                 [c.get("why") for c in contradictions])
     if contradictions:
         raise SystemExit(
             "position(s) %s are scored outside the band their check-items allow (%s). A breach "
@@ -385,6 +441,12 @@ def main():
                      if c.get("unblocks_position")}
         blocked = [p for p in blocked_before if p not in unblocked]
 
+    if blocked and or_unresolved:
+        return freeze_unresolved(run_dir, corrections, issued, check, "evidence not confirmed",
+                                 blocked,
+                                 ["%s %s: %s" % (r.get("position"), r.get("code"), "; ".join(r.get("problems") or []))
+                                  for r in check.get("rows", [])
+                                  if r.get("outcome") in blocking_outcomes])
     if blocked:
         raise SystemExit(
             "the score of position(s) %s is blocked: the evidence behind a finding there is "
@@ -491,6 +553,7 @@ def main():
         f.write("\n".join(lines))
 
     freeze = {
+        "score_status": "confirmed",
         "what_this_is": "the checksums of the frozen files themselves. Everything else in "
                         "this run can be checked against the record; these two files are "
                         "the record of the conclusion, and this is what pins them. Publish "

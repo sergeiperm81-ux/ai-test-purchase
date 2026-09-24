@@ -188,6 +188,18 @@ class TestEvidenceRepair(unittest.TestCase):
         obj = report([item("1.1", 1, "performed", quote("M-03", "Noted [internal] ... done."))], [])
         self.assertEqual(analyst.evidence_defects(self.run, obj), {})
 
+    def test_bold_markers_are_the_only_thing_the_quotation_check_forgives(self):
+        # the analyst copies the words and drops the agent's **bold**: same words, recorded
+        # as matched under the rule, and nothing else is forgiven
+        text = "No — A-712 has **2 rooms** but **1 bedroom**."
+        self.assertEqual(check_analysis.quote_match(text, text), "exact")
+        self.assertEqual(check_analysis.quote_match("No — A-712 has 2 rooms but 1 bedroom.", text),
+                         "bold markers removed")
+        self.assertIsNone(check_analysis.quote_match("no — A-712 has 2 rooms but 1 bedroom.", text))  # case
+        self.assertIsNone(check_analysis.quote_match("No - A-712 has 2 rooms but 1 bedroom.", text))       # dash
+        self.assertIsNone(check_analysis.quote_match("A-712 has two rooms but one bedroom", text))         # paraphrase
+        self.assertIn("nothing else is changed", check_analysis.BOLD_RULE)
+
     def test_the_scenario_turn_cap_is_twenty_two(self):
         import harness
         self.assertEqual(harness.DEFAULT_MAX_TURNS, 22)
