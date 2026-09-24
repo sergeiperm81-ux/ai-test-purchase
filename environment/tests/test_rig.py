@@ -228,6 +228,30 @@ class TestCallLog(RigCase):
         self.assertEqual(self.mock.to("/oa/"), [])
         self.assertEqual(self.calls(), [])
 
+    def test_one_configuration_cannot_take_the_shared_ceiling(self):
+        # the shared ceiling admits the call, the configuration's own does not: nothing is
+        # sent, and it is a limit of that purchase, not a stop of the day
+        cid = providers.config_for("oa-model").get("configuration_id")
+        os.environ["TEST_PURCHASE_BUDGET_CAPS"] = json.dumps(
+            {"per_utc_day": {"USD": 1}, "per_scope": {"USD": 1},
+             "per_configuration_in_scope": {cid: {"USD": 0.0000001}}})
+        with self.assertRaises(call_log.ConfigurationCapExceeded) as e:
+            self.chat()
+        self.assertNotIsInstance(e.exception, call_log.BudgetExceeded)
+        self.assertEqual(self.mock.to("/oa/"), [])
+        # a configuration without a ceiling of its own is refused too, when the ceilings are set
+        os.environ["TEST_PURCHASE_BUDGET_CAPS"] = json.dumps(
+            {"per_utc_day": {"USD": 1}, "per_scope": {"USD": 1}, "per_configuration_in_scope": {}})
+        with self.assertRaises(call_log.ConfigurationCapExceeded):
+            self.chat()
+        # and within its ceiling the call goes
+        os.environ["TEST_PURCHASE_BUDGET_CAPS"] = json.dumps(
+            {"per_utc_day": {"USD": 1}, "per_scope": {"USD": 1},
+             "per_configuration_in_scope": {cid: {"USD": 1}}})
+        self.mock.route("/oa/", ok(openai_body()))
+        self.chat()
+        self.assertEqual(len(self.mock.to("/oa/")), 1)
+
     def test_every_attempt_reserves_before_it_is_sent(self):
         # one attempt reserves about 0.0018 USD; the ceiling admits one reservation only, and a
         # failed attempt with no usage keeps counting at its reservation

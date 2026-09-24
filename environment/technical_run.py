@@ -25,7 +25,20 @@ if BASE not in sys.path:
 import series
 
 REHEARSAL_DAYS = 1
-REHEARSAL_CEILING = {"USD": 10.0, "CHF": 2.0}
+REHEARSAL_CEILING = {"USD": 8.0, "CHF": 0.6}
+# each configuration's own ceiling in the rehearsal, the analyst's included. The USD ones add
+# up to the USD ceiling; each is several times what the configuration spent on 22.09.2026
+REHEARSAL_PER_CONFIGURATION = {
+    "openai/gpt-4.1-mini-2025-04-14": {"USD": 0.40},
+    "anthropic/claude-haiku-4-5-20251001": {"USD": 0.80},
+    "google/gemini-2.5-flash": {"USD": 0.25},
+    "xai/grok-4.20-0309-non-reasoning": {"USD": 0.90},
+    "mistral/mistral-small-2603": {"USD": 0.40},
+    "cohere/command-a-03-2025": {"USD": 3.50},
+    "infomaniak/mistralai/Mistral-Small-4-119B-2603": {"CHF": 0.60},
+    "deepseek/deepseek-flash": {"USD": 0.15},
+    "openai/gpt-5.4-mini-2026-03-17": {"USD": 1.60},
+}
 # every outgoing NeoMundi request of the rehearsal counts, successful or not, observations
 # and contract retrievals separately: 60 of each per purchase (the hard stop of model calls
 # per purchase), 480 of each for the eight. max_prompt_chars stays what the models file says
@@ -39,8 +52,10 @@ def technical_models(source, neomundi_enabled):
     data = series.jload(source)
     out = dict(data)
     out["neomundi"] = dict(data["neomundi"], enabled=bool(neomundi_enabled), **REHEARSAL_NEOMUNDI_CAPS)
-    out["limits"] = dict(data["limits"], budget=dict(data["limits"]["budget"],
-                                                     per_scope=dict(REHEARSAL_CEILING)))
+    out["limits"] = dict(data["limits"], budget=dict(
+        data["limits"]["budget"], per_scope=dict(REHEARSAL_CEILING),
+        per_utc_day=dict(REHEARSAL_CEILING),
+        per_configuration_in_scope={k: dict(v) for k, v in REHEARSAL_PER_CONFIGURATION.items()}))
     out["version"] = data.get("version", "") + " | technical rehearsal derivation"
     out["technical_rehearsal"] = {"rounds": REHEARSAL_DAYS,
                                   "purchases_per_round": len(data["models"]),

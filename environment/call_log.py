@@ -44,6 +44,11 @@ class BudgetExceeded(LimitExceeded):
     """The spend ceiling would be passed by the next attempt."""
 
 
+class ConfigurationCapExceeded(LimitExceeded):
+    """One configuration reached its own spend ceiling in the scope. The purchase stops at
+    the limit; the other configurations of the day go on."""
+
+
 class ProviderCallFailed(Exception):
     """The call did not produce a complete answer within the allowed attempts."""
 
@@ -156,13 +161,16 @@ def counted(entry):
     return entry["actual"] if entry["actual"] is not None else entry["reserved"]
 
 
-def spent(scope=None, utc_date=None):
-    """Money counted against the ceilings, per currency, for a scope and/or a UTC date."""
+def spent(scope=None, utc_date=None, configuration_id=None):
+    """Money counted against the ceilings, per currency, for a scope and/or a UTC date
+    and/or one configuration."""
     out = {}
     for e in ledger_state().values():
         if scope is not None and e.get("scope") != scope:
             continue
         if utc_date is not None and e.get("utc_date") != utc_date:
+            continue
+        if configuration_id is not None and e.get("configuration_id") != configuration_id:
             continue
         out[e["currency"]] = round(out.get(e["currency"], 0.0) + counted(e), 6)
     return out
@@ -238,6 +246,20 @@ class Recorder:
                     raise BudgetExceeded(
                         "%s ceiling %.4f %s: %.4f already counted, this attempt could add up "
                         "to %.4f" % (name, cap, cur, used.get(cur, 0.0), bound["amount"]))
+            # a ceiling of each configuration in the scope, where one is set: no single
+            # provider can take the whole of the shared ceiling
+            per_cfg = caps.get("per_configuration_in_scope")
+            if per_cfg is not None:
+                cid = cfg.get("configuration_id")
+                cap = (per_cfg.get(cid) or {}).get(cur)
+                if cap is None:
+                    raise ConfigurationCapExceeded("no ceiling in %s for configuration %s is set: "
+                                                   "no paid call is made" % (cur, cid))
+                used = spent(scope=budget_scope(), configuration_id=cid).get(cur, 0.0)
+                if used + bound["amount"] > cap:
+                    raise ConfigurationCapExceeded(
+                        "ceiling of %s %.4f %s: %.4f already counted, this attempt could add up "
+                        "to %.4f" % (cid, cap, cur, used, bound["amount"]))
             _append_jsonl(ledger_path(), {
                 "event": "reserve", "at_utc": utc_iso(now), "utc_date": now.date().isoformat(),
                 "scope": budget_scope(), "run_id": self.run_id, "provider_attempt_id": attempt_id,

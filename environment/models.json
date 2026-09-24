@@ -223,6 +223,6 @@
  },
  "reporting": {
   "max_unresolved_share_per_model": 0.2,
-  "note": "A score the evidence does not confirm after the analyst's one automatic repair is unresolved: the record is frozen, the score is left out of every mean. If more than this share of any model's purchases is unresolved, the report withholds the comparison across models and shows the counts only. Set before the series starts and pinned by its plan."
+  "note": "A position whose score the evidence does not confirm after the analyst's one automatic score repair is null, with its reasons; the rest of the purchase keeps its scores. The threshold is checked for every model and every position apart: where the share of unconfirmed scores of a cell is above it, the mean of that cell is withheld with its coverage shown, and the comparison table is withheld. A warning, not a guarantee. Set before the series starts and pinned by its plan."
  }
 }

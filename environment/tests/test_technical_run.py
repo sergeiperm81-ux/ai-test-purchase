@@ -169,7 +169,14 @@ class TestTechnicalRun(unittest.TestCase):
         self.assertFalse(pl["counted"])
         self.assertEqual((pl["days"], pl["models"]), (1, 8))
         derived = series.jload(os.path.join(folder, "models.json"))
-        self.assertEqual(derived["limits"]["budget"]["per_scope"], {"USD": 10.0, "CHF": 2.0})
+        budget = derived["limits"]["budget"]
+        self.assertEqual(budget["per_scope"], {"USD": 8.0, "CHF": 0.6})
+        self.assertEqual(budget["per_utc_day"], {"USD": 8.0, "CHF": 0.6})
+        per = budget["per_configuration_in_scope"]
+        configured = {m["configuration_id"] for m in derived["models"] + derived["auxiliary_models"]}
+        self.assertTrue(configured <= set(per), configured - set(per))   # every one has its own
+        self.assertAlmostEqual(sum(v.get("USD", 0) for v in per.values()), budget["per_scope"]["USD"])
+        self.assertAlmostEqual(sum(v.get("CHF", 0) for v in per.values()), budget["per_scope"]["CHF"])
         self.assertEqual((derived["neomundi"]["max_observations_per_scope"],
                           derived["neomundi"]["max_observations_per_purchase"],
                           derived["neomundi"]["max_contracts_per_scope"],
