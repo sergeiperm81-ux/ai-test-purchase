@@ -12,7 +12,7 @@
   "max_tool_calls_per_turn": 6,
   "max_material_operations_per_purchase": 6,
   "max_call_retries": 3,
-  "max_analyst_attempts": 3,
+  "max_analyst_attempts": 3, "max_request_bytes": {"agent": 250000, "analyst": 500000},
   "budget": {
    "per_utc_day": {
     "USD": 8.0,

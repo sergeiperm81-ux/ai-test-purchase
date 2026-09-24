@@ -131,15 +131,18 @@ def price_legacy(model, norm, rates=None):
 
 def upper_bound(rate_key, request_bytes, max_output_tokens, rates=None):
     """The most one attempt can cost, for the reservation made before it is sent: every
-    byte of the request a token, plus the template allowance, all uncached, at the long
-    context tier when it could apply, plus the full output allowance."""
+    byte of the request a token, plus the template allowance, all at the dearest input rate
+    that can apply to it (a cache write costs more than plain input), at the long context
+    tier when it could apply, plus the full output allowance."""
     r = rate(rate_key, rates)
     if not r:
         return None
     tokens_in = request_bytes + TEMPLATE_TOKENS
     r = _tier(r, tokens_in)
-    amount = (tokens_in * r["input"] + (max_output_tokens or 0) * r["output"]) / 1e6
+    dearest = max(r["input"], r.get("cache_write") or 0, r.get("cached_input") or 0)
+    amount = (tokens_in * dearest + (max_output_tokens or 0) * r["output"]) / 1e6
     # rounded up, never down: a reservation below the bound would not be a bound
     return {"amount": math.ceil(round(amount * 1e6, 6)) / 1e6, "currency": r["currency"],
-            "basis": "upper bound: %d request bytes + %d template tokens uncached, %d output "
-                     "tokens" % (request_bytes, TEMPLATE_TOKENS, max_output_tokens or 0)}
+            "basis": "upper bound: %d request bytes + %d template tokens at the dearest input "
+                     "rate %s, %d output tokens" % (request_bytes, TEMPLATE_TOKENS, dearest,
+                                                   max_output_tokens or 0)}

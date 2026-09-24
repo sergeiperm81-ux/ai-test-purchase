@@ -228,6 +228,24 @@ class TestCallLog(RigCase):
         self.assertEqual(self.mock.to("/oa/"), [])
         self.assertEqual(self.calls(), [])
 
+    def test_a_request_over_its_size_limit_is_not_sent(self):
+        rec = self.recorder()
+        rec.limits = dict(rec.limits, max_request_bytes={"agent": 10, "analyst": 10})
+        with self.assertRaises(call_log.LimitExceeded) as e:
+            self.chat(rec=rec, content="x" * 50, role="agent")
+        self.assertIn("the limit is 10", str(e.exception))
+        self.assertEqual(self.mock.to("/oa/"), [])
+        rec.limits = dict(rec.limits, max_request_bytes={"analyst": 10**6})
+        with self.assertRaises(call_log.LimitExceeded) as e:           # no limit for the role
+            self.chat(rec=rec, role="agent")
+        self.assertIn("no max_request_bytes for the role agent", str(e.exception))
+        self.assertEqual(self.mock.to("/oa/"), [])
+        self.assertEqual(call_log.spent(scope="test-scope"), {})      # nothing was reserved
+
+    def test_the_models_file_sets_the_request_size_limits(self):
+        lim = fsio.read_json(os.path.join(BASE, "models.json"))["limits"]
+        self.assertEqual(lim["max_request_bytes"], {"agent": 250000, "analyst": 500000})
+
     def test_one_configuration_cannot_take_the_shared_ceiling(self):
         # the shared ceiling admits the call, the configuration's own does not: nothing is
         # sent, and it is a limit of that purchase, not a stop of the day
@@ -440,6 +458,24 @@ class TestUsageAndCost(unittest.TestCase):
         exact = ((3000 + usage.TEMPLATE_TOKENS) * 0.40 + 100 * 1.60) / 1e6     # 0.0029984
         self.assertGreaterEqual(b["amount"], exact)
         self.assertAlmostEqual(b["amount"], 0.002999)
+
+    def test_upper_bound_takes_the_dearest_input_rate(self):
+        # Claude Haiku: a cache write costs 1.25 per million against 1.00 for plain input. A
+        # call whose whole input is written to the cache must never cost more than its bound
+        rates = usage.load_rates()
+        b = usage.upper_bound("anthropic:claude-haiku-4-5", 100000, 4096, rates)
+        worst = usage.price("anthropic:claude-haiku-4-5",
+                            {"input_tokens": 100000 + usage.TEMPLATE_TOKENS, "cached_input_tokens": 0,
+                             "cache_write_tokens": 100000 + usage.TEMPLATE_TOKENS,
+                             "output_tokens": 4096}, rates)
+        self.assertGreaterEqual(b["amount"], worst["amount"])
+        self.assertIn("dearest input rate 1.25", b["basis"])
+        # every configuration of the models file, the same way
+        for m in fsio.read_json(os.path.join(BASE, "models.json"))["models"]:
+            r = usage.rate(m["rate_key"], rates)
+            dearest = max(r["input"], r.get("cache_write") or 0, r.get("cached_input") or 0)
+            self.assertIn("dearest input rate %s" % dearest,
+                          usage.upper_bound(m["rate_key"], 1000, 10, rates)["basis"])
 
     def test_no_prefix_matching_for_configurations(self):
         self.assertIsNone(usage.rate("oa:oa-model-2025", RATES))

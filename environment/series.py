@@ -282,6 +282,9 @@ def validate_configuration(models, configurations):
     for k in LIMIT_KEYS:
         if not isinstance(lim.get(k), int):
             raise SystemExit("limits.%s is not set in the models file" % k)
+    sizes = lim.get("max_request_bytes") or {}
+    if not all(isinstance(sizes.get(r), int) for r in ("agent", "analyst")):
+        raise SystemExit("limits.max_request_bytes needs an integer for the agent and the analyst")
     budget = lim.get("budget") or {}
     if not budget.get("per_utc_day") or not budget.get("per_scope"):
         raise SystemExit("limits.budget needs per_utc_day and per_scope ceilings")

@@ -233,6 +233,16 @@ class Recorder:
 
     def reserve(self, attempt_id, role, cfg, request_len):
         """Reserves the upper bound of one attempt, atomically, or refuses it."""
+        # the size of the request is bounded before anything else: where the configuration
+        # sets the limits, a role without one is not sent at all
+        sizes = self.limits.get("max_request_bytes")
+        if sizes is not None:
+            cap = sizes.get(role)
+            if cap is None:
+                raise LimitExceeded("no max_request_bytes for the role %s: the request is not sent" % role)
+            if request_len > cap:
+                raise LimitExceeded("the request of the %s is %d bytes; the limit is %d: it is "
+                                    "not sent" % (role, request_len, cap))
         bound = usage.upper_bound(cfg["rate_key"], request_len, cfg["max_output_tokens"])
         caps, cur = self.caps(), bound["currency"]
         with LedgerLock():
