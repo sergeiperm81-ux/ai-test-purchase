@@ -161,6 +161,29 @@ class TestTechnicalRun(unittest.TestCase):
         self.assertEqual((anchor["state"], anchor["purchases_complete"], anchor["unfrozen"]),
                          ("provisional", 8, ["D01-C"]))
 
+    def test_a_partly_confirmed_purchase_is_pinned_in_the_anchor(self):
+        # "partial": the record is frozen and some positions are null; it is closed, like
+        # "frozen", and the anchor of the rehearsal becomes final with it
+        tmp = tempfile.mkdtemp(prefix="anc-")
+        runs, folder = os.path.join(tmp, "runs"), os.path.join(tmp, "TECH-X")
+        entries = []
+        for label, status in (("A", "frozen"), ("B", "partial")):
+            rid = "TP-D01-%s" % label
+            os.makedirs(os.path.join(runs, rid))
+            for name in ("run_manifest.json", "freeze_manifest.json"):
+                series.jdump(os.path.join(runs, rid, name), {"run_id": rid})
+            entries.append({"day": 1, "label": label, "run_id": rid, "status": status})
+        os.makedirs(folder)
+        saved = (series.RUNS, series.registry)
+        series.RUNS, series.registry = runs, (lambda f: entries)
+        try:
+            technical_run.rehearsal_anchor("TECH-X", folder, {"schedule": [{"day": 1}], "labels": ["A", "B"]})
+        finally:
+            series.RUNS, series.registry = saved
+        self.assertTrue(os.path.exists(os.path.join(folder, "TECH-X.rehearsal.final.json")),
+                        os.listdir(folder))
+        shutil.rmtree(tmp, ignore_errors=True)
+
     def test_one_round_of_eight(self):
         sid, folder = self.ready()
         self.assertTrue(sid.startswith("TECH-"))

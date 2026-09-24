@@ -135,7 +135,7 @@ def rehearsal_anchor(sid, folder, pl):
         for name in ("run_manifest.json", "freeze_manifest.json"):
             p = os.path.join(run_dir, name)
             entry[name] = series.sha256_file(p) if os.path.exists(p) else None
-        if e["status"] != "frozen" or not entry["freeze_manifest.json"]:
+        if e["status"] not in series.PINNED or not entry["freeze_manifest.json"]:
             unfrozen.append(key)
         pinned[key] = entry
     out = {"what_this_is": "the anchor of the technical rehearsal: DIAGNOSTIC, NOT COUNTED. It "
