@@ -81,7 +81,7 @@ Python 3.12. From the root of the repository:
 ```
 python -m pip install -r requirements.txt
 cd environment
-python -m pytest tests -q                # 111 tests; no provider is called, no key is needed
+python -m pytest tests -q                # 112 tests; no provider is called, no key is needed
 python verify_freeze.py ../evidence/TP-gpt-5-r1-20260909-1443.freeze.json ../evidence/first-counted-purchase
 ```
 

@@ -184,8 +184,24 @@ class TestPositionsInTheReport(unittest.TestCase):
         shares = sr.coverage(pl, self.data())
         self.assertEqual(shares["A"], (3, 24, 0.125))     # the pending purchase is not in it
         self.assertEqual(shares["B"], (0, 12, 0.0))       # neither is the failed one
-        self.assertEqual(sr.withheld(shares, 0.2), [])
-        self.assertEqual(sr.withheld(shares, 0.1), ["A"])
+
+    def test_the_threshold_is_per_model_and_position_not_over_the_twelve(self):
+        # position 4 never confirmed for A: 1 position in 12 is 8% of the whole, under a 20%
+        # threshold on the whole, and 100% of that cell, which is what the threshold is about
+        import series_report as sr
+        pl = {"labels": ["A", "B"]}
+        day = lambda d: {"day": d, "kind": "analysed", "full": False, "raw": None, "index": None,
+                         "matrix": [1, 1, 1, None] + [1] * 8, "status": "partial"}
+        data = {"A": [day(1), day(2)], "B": self.data()["B"]}
+        self.assertLess(sr.coverage(pl, data)["A"][2], 0.2)
+        over = sr.over_threshold(pl, data, 0.2)
+        self.assertEqual(over, [("A", 4)])
+        pos = sr.positions(pl, data, over)
+        self.assertIn("| 4 | 0/2, mean withheld |", pos[5])      # coverage kept, mean withheld
+        self.assertIn("| 1 | 2/2, mean +1.00 |", pos[2])          # other cells untouched
+        # one unconfirmed in five is 20%, not above it
+        five = {"A": [dict(day(d), matrix=[1] * 12, full=True, raw=12, index=0) for d in range(1, 5)] + [day(5)]}
+        self.assertEqual(sr.over_threshold({"labels": ["A"]}, five, 0.2), [])
 
     def test_counts_apart_and_means_only_over_full_purchases(self):
         import series_report as sr

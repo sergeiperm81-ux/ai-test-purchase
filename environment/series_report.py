@@ -22,10 +22,14 @@ confirmed; the means are over such purchases, and the number of them is printed 
 every mean. Sums are not compared between models whose numbers of confirmed purchases
 differ.
 
-The share of unconfirmed positions per model is a warning, not a guarantee: above the
-threshold pinned in models.json the comparison table is withheld altogether; below it the
-comparison is shown with its coverage and still has to be read with it, because what the
-analyst finds easy to confirm may depend on the model.
+The threshold pinned in models.json is checked for every model and every position apart,
+not over the twelve positions together: a position never confirmed for one model is 1/12 of
+its positions and would pass a threshold on the whole. Where the share of unconfirmed
+scores of one position for one model is above it, the mean of that cell is withheld and
+its coverage (confirmed / analysed) is still shown, and the comparison table is withheld
+altogether. The threshold is a warning, not a guarantee: below it the comparison still has
+to be read with the coverage, because what the analyst finds easy to confirm may depend on
+the model.
 
 Usage:  python series_report.py week N
         python series_report.py final
@@ -87,9 +91,22 @@ def coverage(pl, data):
     return out
 
 
-def withheld(shares, limit):
-    """The labels whose share of unconfirmed positions is above the limit."""
-    return sorted(l for l, (_, total, share) in shares.items() if total and share > limit)
+def cell(data, label, pos):
+    """(confirmed scores, analysed purchases) of one position for one label."""
+    analysed = [i for i in data.get(label, []) if i["kind"] == "analysed"]
+    return [i["matrix"][pos] for i in analysed if i["matrix"][pos] is not None], len(analysed)
+
+
+def over_threshold(pl, data, limit):
+    """Every (label, position) whose share of unconfirmed scores is above the limit;
+    positions are numbered from 1."""
+    out = []
+    for l in pl["labels"]:
+        for pos in range(POSITIONS):
+            conf, n = cell(data, l, pos)
+            if n and (n - len(conf)) / n > limit:
+                out.append((l, pos + 1))
+    return out
 
 
 def purchases(pl, data, days):
@@ -109,17 +126,23 @@ def purchases(pl, data, days):
     return lines
 
 
-def positions(pl, data):
-    """Per position and label: confirmed / analysed, and the mean of the confirmed scores."""
+def positions(pl, data, over=()):
+    """Per position and label: confirmed / analysed, and the mean of the confirmed scores,
+    withheld where the share of unconfirmed scores of that cell is above the threshold."""
     labels = pl["labels"]
     lines = ["| Position | " + " | ".join(labels) + " |", "|---|" + "---|" * len(labels)]
     for pos in range(POSITIONS):
         cells = []
         for l in labels:
-            analysed = [i for i in data.get(l, []) if i["kind"] == "analysed"]
-            conf = [i["matrix"][pos] for i in analysed if i["matrix"][pos] is not None]
-            cells.append("%d/%d, mean %+.2f" % (len(conf), len(analysed), statistics.mean(conf))
-                         if conf else "%d/%d" % (len(conf), len(analysed)) if analysed else "n/a")
+            conf, n = cell(data, l, pos)
+            if not n:
+                cells.append("n/a")
+            elif (l, pos + 1) in over:
+                cells.append("%d/%d, mean withheld" % (len(conf), n))
+            elif conf:
+                cells.append("%d/%d, mean %+.2f" % (len(conf), n, statistics.mean(conf)))
+            else:
+                cells.append("%d/%d" % (len(conf), n))
         lines.append("| %d | " % (pos + 1) + " | ".join(cells) + " |")
     return lines
 
@@ -162,13 +185,14 @@ def by_day(pl, data, days):
 def write(sid, folder, pl, days, title, name):
     data = collect(folder, days)
     limit = threshold(folder)
-    over = withheld(coverage(pl, data), limit)
+    over = over_threshold(pl, data, limit)
     if over:
-        cmp_part = ["> **Comparison withheld.** More than %.0f%% of the positions of the analysed "
-                    "purchases are unconfirmed for %s. No means are shown for any model. The "
-                    "coverage below is complete." % (100 * limit, ", ".join(over)), ""]
+        cmp_part = ["> **Comparison withheld.** More than %.0f%% of the scores are unconfirmed in: "
+                    "%s. No purchase means are shown for any model; the means of those cells are "
+                    "withheld in the table above, and their coverage is shown."
+                    % (100 * limit, ", ".join("%s position %d" % c for c in over)), ""]
     else:
-        cmp_part = ["Below the warning threshold of %.0f%% unconfirmed positions for every model. "
+        cmp_part = ["Below the warning threshold of %.0f%% unconfirmed scores in every position of every model. "
                     "This does not make the comparison reliable by itself: read it with the "
                     "coverage above, because which positions the analyst could confirm may "
                     "depend on the model." % (100 * limit), ""] + comparison(pl, data)
@@ -178,7 +202,7 @@ def write(sid, folder, pl, days, title, name):
              "%s." % (sid, pl["analyst_model"], datetime.date.today().isoformat()), "",
              "## Purchases", ""] + purchases(pl, data, days) + [
              "", "## Coverage by position: confirmed / analysed, and the mean of the confirmed scores", ""] + \
-            positions(pl, data) + ["", "## Comparison", ""] + cmp_part + \
+            positions(pl, data, over) + ["", "## Comparison", ""] + cmp_part + \
             ["", "## By day", ""] + by_day(pl, data, days) + ["",
              "## How to read this", "",
              "- Analysed: the purchase is complete and its record is frozen. Each of its twelve positions has a confirmed score or none; coverage is counted over these purchases.",

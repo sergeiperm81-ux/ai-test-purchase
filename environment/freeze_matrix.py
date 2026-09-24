@@ -474,6 +474,19 @@ def main():
             if r.get("outcome") in blocking_outcomes and str(r.get("position")) in {str(b) for b in blocked}:
                 unresolved.setdefault(str(r.get("position")), []).append(
                     "Evidence for %s not confirmed: %s." % (r.get("code"), "; ".join(r.get("problems") or [])))
+        # where a deterministic rule overrode the analyst in an unresolved position, the
+        # record keeps what the analyst cited, so that the dispute can be read from it
+        cited = {it.get("code"): it.get("evidence") for it in
+                 fsio.read_json(os.path.join(run_dir, "Analysis.json")).get("check_items", [])}
+        for r in check.get("rows", []):
+            pos = str(r.get("position"))
+            if pos in unresolved and r.get("verification_mode") and r.get("problems"):
+                ev = cited.get(r.get("code")) or {}
+                unresolved[pos].append(
+                    "Disputed %s: %s. The analyst cited %s." % (
+                        r.get("code"), "; ".join(r.get("problems")).rstrip("."),
+                        "%s \"%s\"" % (ev.get("message_id"), ev.get("text")) if ev.get("type") == "quote"
+                        else json.dumps(ev, ensure_ascii=False)))
         return freeze_partial(run_dir, corrections, issued, scores, check, cls, unresolved)
     if blocked:
         raise SystemExit(
