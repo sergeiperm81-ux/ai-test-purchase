@@ -3,21 +3,35 @@
 Weekly and final reports of a series, from the registry and the frozen matrices.
 Test purchase methodology for AI agents - Sergei Ponomarev - aibusiness.vc
 
-The report counts only scores that are confirmed. A purchase whose record is frozen but
-whose score the evidence did not confirm is "unresolved": it is left out of every mean and
-sum, and the share of such purchases is shown for every model beside any comparison. When
-that share is above the threshold of the plan for any model, the comparison across models
-is withheld altogether: a comparison over the scores that happened to be easy to confirm
-would say more about the analyst than about the models. A day and a model without a
-counted run is listed as missing.
-Models appear under their blind labels. The report is arithmetic over Matrix-final.json
-and nothing else: no reading of dialogues happens here.
+The unit of confirmation is the position, not the purchase. A frozen purchase carries,
+for each of its twelve positions, either the score the evidence confirmed or null with the
+reasons it was not confirmed. The report therefore says, for every model and every
+position, how many analysed purchases have a confirmed score there, and computes nothing
+over a null.
+
+The denominators are stated, and what did not reach an analysis is shown apart:
+
+  analysed      the purchase is complete and its record is frozen (all twelve positions
+                confirmed, or some of them); the denominator of coverage
+  pending       complete, not yet frozen: measurement missing, analysis failed or waiting
+  failed        no complete purchase: technical failure, limit, drift, budget, not started
+  missing       no attempt recorded for that day
+
+A purchase has a raw score and a defect index only when all twelve positions are
+confirmed; the means are over such purchases, and the number of them is printed next to
+every mean. Sums are not compared between models whose numbers of confirmed purchases
+differ.
+
+The share of unconfirmed positions per model is a warning, not a guarantee: above the
+threshold pinned in models.json the comparison table is withheld altogether; below it the
+comparison is shown with its coverage and still has to be read with it, because what the
+analyst finds easy to confirm may depend on the model.
 
 Usage:  python series_report.py week N
         python series_report.py final
 Writes: series/<id>/reports/week-N.md or final.md
 """
-import os, sys, json, datetime, statistics
+import os, sys, datetime, statistics
 
 sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -25,78 +39,104 @@ if BASE not in sys.path:
     sys.path.insert(0, BASE)
 import series as S
 
-
-def collect(folder, days):
-    """Per label: the counted runs of the given days with their frozen result, if any."""
-    reg = S.registry(folder)
-    out = {}
-    for e in reg:
-        if e["day"] not in days or e["status"] not in S.COMPLETE:
-            continue
-        run_dir = os.path.join(S.RUNS, e["run_id"])
-        mf = os.path.join(run_dir, "Matrix-final.json")
-        item = {"day": e["day"], "run_id": e["run_id"], "status": e["status"]}
-        if e["status"] == "frozen" and os.path.exists(mf):
-            m = S.jload(mf)
-            item.update({"frozen": True, "matrix": m["matrix"], "raw": m["result"]["raw_score"],
-                         "index": m["result"]["risk_weighted_defect_index"],
-                         "critical": m["result"]["critical_defects"],
-                         "best": m["result"]["best_practices"],
-                         "corrections": len(m.get("corrections_applied") or [])})
-        else:
-            item.update({"frozen": False, "unresolved": e["status"] == "unresolved"})
-        # the last entry for a day and label wins: a re-analysis supersedes
-        lst = out.setdefault(e["label"], [])
-        lst[:] = [i for i in lst if i["day"] != e["day"]] + [item]
-    return out
-
-
+POSITIONS = 12
 DEFAULT_THRESHOLD = 0.2
+PENDING = ("pending_review", "pending_measurement", "analysis_failed")
 
 
 def threshold(folder):
-    """The largest share of unresolved scores a model may have before the comparison is
-    withheld, from the models file the series pinned."""
+    """The largest share of unconfirmed positions a model may have before the comparison
+    is withheld, from the models file the series pinned."""
     p = os.path.join(folder, "models.json")
     rep = (S.jload(p).get("reporting") or {}) if os.path.exists(p) else {}
     return float(rep.get("max_unresolved_share_per_model", DEFAULT_THRESHOLD))
 
 
-def unresolved_shares(pl, data):
-    """Per label: (unresolved, counted purchases, share)."""
+def collect(folder, days):
+    """Per label, the last registry entry of each planned day, classified."""
+    last = {}
+    for e in S.registry(folder):
+        if e.get("day") in days and e.get("label"):
+            last[(e["label"], e["day"])] = e
+    out = {}
+    for (label, day), e in sorted(last.items()):
+        item = {"day": day, "run_id": e.get("run_id"), "status": e.get("status")}
+        mf = os.path.join(S.RUNS, e["run_id"], "Matrix-final.json") if e.get("run_id") else None
+        if e.get("status") in S.PINNED and mf and os.path.exists(mf):
+            m = S.jload(mf)
+            item.update({"kind": "analysed", "matrix": m["matrix"],
+                         "full": all(x is not None for x in m["matrix"]),
+                         "raw": m["result"].get("raw_score"),
+                         "index": m["result"].get("risk_weighted_defect_index")})
+        elif e.get("status") in PENDING:
+            item["kind"] = "pending"
+        else:
+            item["kind"] = "failed"
+        out.setdefault(label, []).append(item)
+    return out
+
+
+def coverage(pl, data):
+    """Per label: (unconfirmed positions, positions of analysed purchases, share)."""
     out = {}
     for l in pl["labels"]:
-        items = data.get(l, [])
-        n = sum(1 for i in items if i.get("unresolved"))
-        out[l] = (n, len(items), (n / len(items)) if items else 0.0)
+        analysed = [i for i in data.get(l, []) if i["kind"] == "analysed"]
+        total = POSITIONS * len(analysed)
+        null = sum(1 for i in analysed for x in i["matrix"] if x is None)
+        out[l] = (null, total, (null / total) if total else 0.0)
     return out
 
 
 def withheld(shares, limit):
-    """The labels whose share of unresolved scores is above the limit: any one of them
-    withholds the comparison."""
-    return sorted(l for l, (_, counted, share) in shares.items() if counted and share > limit)
+    """The labels whose share of unconfirmed positions is above the limit."""
+    return sorted(l for l, (_, total, share) in shares.items() if total and share > limit)
 
 
-def table(pl, data, days, compare=True):
-    labels = pl["labels"]
-    shares = unresolved_shares(pl, data)
-    lines = ["| Label | Days planned | Counted | Score confirmed | Score unresolved | Pending | Missing | Raw score, mean | Defect index, sum | Critical defects | Best practices |",
-             "|---|---|---|---|---|---|---|---|---|---|---|"]
-    for l in labels:
+def purchases(pl, data, days):
+    lines = ["| Label | Days planned | Analysed | All 12 confirmed | Partly confirmed | Pending | Failed | Missing | Unconfirmed positions |",
+             "|---|---|---|---|---|---|---|---|---|"]
+    shares = coverage(pl, data)
+    for l in pl["labels"]:
         items = data.get(l, [])
-        frozen = [i for i in items if i["frozen"]]
-        pending = [i for i in items if not i["frozen"] and not i.get("unresolved")]
-        n, counted, share = shares[l]
-        missing = len(days) - len(items)
-        if compare and frozen:
-            cmp_cells = ("%.2f" % statistics.mean(i["raw"] for i in frozen),
-                         sum(i["index"] for i in frozen), sum(i["critical"] for i in frozen),
-                         sum(i["best"] for i in frozen))
-        else:
-            cmp_cells = ("withheld" if not compare else "n/a",) * 4
-        lines.append("| %s | %d | %d | %d | %d (%.0f%%) | %d | %d | %s | %s | %s | %s |" % (
-            (l, len(days), counted, len(frozen), n, 100 * share, len(pending), missing) + cmp_cells))
+        analysed = [i for i in items if i["kind"] == "analysed"]
+        null, total, share = shares[l]
+        lines.append("| %s | %d | %d | %d | %d | %d | %d | %d | %d of %d (%.0f%%) |" % (
+            l, len(days), len(analysed), sum(1 for i in analysed if i["full"]),
+            sum(1 for i in analysed if not i["full"]),
+            sum(1 for i in items if i["kind"] == "pending"),
+            sum(1 for i in items if i["kind"] == "failed"),
+            len(days) - len(items), null, total, 100 * share))
+    return lines
+
+
+def positions(pl, data):
+    """Per position and label: confirmed / analysed, and the mean of the confirmed scores."""
+    labels = pl["labels"]
+    lines = ["| Position | " + " | ".join(labels) + " |", "|---|" + "---|" * len(labels)]
+    for pos in range(POSITIONS):
+        cells = []
+        for l in labels:
+            analysed = [i for i in data.get(l, []) if i["kind"] == "analysed"]
+            conf = [i["matrix"][pos] for i in analysed if i["matrix"][pos] is not None]
+            cells.append("%d/%d, mean %+.2f" % (len(conf), len(analysed), statistics.mean(conf))
+                         if conf else "%d/%d" % (len(conf), len(analysed)) if analysed else "n/a")
+        lines.append("| %d | " % (pos + 1) + " | ".join(cells) + " |")
+    return lines
+
+
+def comparison(pl, data):
+    """Means over the purchases whose twelve positions are all confirmed, with their number."""
+    lines = ["| Label | Purchases with all 12 confirmed | Raw score, mean | Defect index, mean per purchase | Critical defects (confirmed positions) | Best practices (confirmed positions) |",
+             "|---|---|---|---|---|---|"]
+    for l in pl["labels"]:
+        analysed = [i for i in data.get(l, []) if i["kind"] == "analysed"]
+        full = [i for i in analysed if i["full"]]
+        conf = [x for i in analysed for x in i["matrix"] if x is not None]
+        lines.append("| %s | %d | %s | %s | %d | %d |" % (
+            l, len(full),
+            "%.2f" % statistics.mean(i["raw"] for i in full) if full else "n/a",
+            "%.2f" % statistics.mean(i["index"] for i in full) if full else "n/a",
+            sum(1 for x in conf if x == -3), sum(1 for x in conf if x == 2)))
     return lines
 
 
@@ -109,57 +149,42 @@ def by_day(pl, data, days):
             it = next((i for i in data.get(l, []) if i["day"] == d), None)
             if not it:
                 cells.append("missing")
-            elif not it["frozen"]:
-                cells.append({"unresolved": "score unresolved",
-                              "pending_review": "pending review",
-                              "pending_measurement": "pending measurement",
-                              "analysis_failed": "analysis failed"}.get(it["status"], "pending"))
+            elif it["kind"] == "analysed":
+                n = sum(1 for x in it["matrix"] if x is not None)
+                cells.append("12/12, raw %+d, index %d" % (it["raw"], it["index"]) if it["full"]
+                             else "%d/12 confirmed" % n)
             else:
-                cells.append("raw %+d, index %d%s" % (it["raw"], it["index"],
-                                                       ", CRITICAL" if it["critical"] else ""))
+                cells.append(it["status"].replace("_", " "))
         lines.append("| %02d | " % d + " | ".join(cells) + " |")
-    return lines
-
-
-def positions(pl, data):
-    """How often each of the twelve positions scored negative, per label: where the
-    defects are, not only how many."""
-    labels = pl["labels"]
-    lines = ["| Position | " + " | ".join(labels) + " |", "|---|" + "---|" * len(labels)]
-    for pos in range(12):
-        cells = []
-        for l in labels:
-            frozen = [i for i in data.get(l, []) if i["frozen"]]
-            neg = sum(1 for i in frozen if i["matrix"][pos] < 0)
-            cells.append("%d/%d" % (neg, len(frozen)) if frozen else "n/a")
-        lines.append("| %d | " % (pos + 1) + " | ".join(cells) + " |")
     return lines
 
 
 def write(sid, folder, pl, days, title, name):
     data = collect(folder, days)
     limit = threshold(folder)
-    over = withheld(unresolved_shares(pl, data), limit)
-    banner = []
+    over = withheld(coverage(pl, data), limit)
     if over:
-        banner = ["> **Comparison withheld.** The share of purchases whose score the evidence did "
-                  "not confirm is above %.0f%% for %s. Means and sums are not shown for any "
-                  "model: a comparison over the scores that were easy to confirm would not be a "
-                  "comparison of the models. The counts below are complete." % (100 * limit, ", ".join(over)), ""]
-    lines = ["# %s" % title, ""] + banner + [
+        cmp_part = ["> **Comparison withheld.** More than %.0f%% of the positions of the analysed "
+                    "purchases are unconfirmed for %s. No means are shown for any model. The "
+                    "coverage below is complete." % (100 * limit, ", ".join(over)), ""]
+    else:
+        cmp_part = ["Below the warning threshold of %.0f%% unconfirmed positions for every model. "
+                    "This does not make the comparison reliable by itself: read it with the "
+                    "coverage above, because which positions the analyst could confirm may "
+                    "depend on the model." % (100 * limit), ""] + comparison(pl, data)
+    lines = ["# %s" % title, "",
              "Series %s. Models under blind labels; the mapping is held apart from the "
              "plan. Purchaser: scripted, identical for every model. Analyst: %s. Generated "
              "%s." % (sid, pl["analyst_model"], datetime.date.today().isoformat()), "",
-             "## By model", ""] + table(pl, data, days, compare=not over) + ["", "## By day", ""] + \
-            by_day(pl, data, days) + ["", "## Where the defects are: negative scores per position, over the frozen runs", ""] + \
-            positions(pl, data) + ["",
+             "## Purchases", ""] + purchases(pl, data, days) + [
+             "", "## Coverage by position: confirmed / analysed, and the mean of the confirmed scores", ""] + \
+            positions(pl, data) + ["", "## Comparison", ""] + cmp_part + \
+            ["", "## By day", ""] + by_day(pl, data, days) + ["",
              "## How to read this", "",
-             "- Raw score: the sum of the twelve scores of one purchase, from −36 to +24; it says how the interaction went.",
-             "- Defect index: class × |negative score|, summed; the weighted severity of the defects observed. Positive scores do not reduce it.",
-             "- Critical defects: scores of −3. Best practices: scores of +2.",
-             "- Score unresolved: the record of the purchase is frozen, but after the analyst's one automatic repair the evidence still did not confirm the score. It is not in any mean or sum; its share per model is shown so that the comparison can be judged. Above the threshold of the plan for any model, the comparison is withheld.",
-             "- Pending: the purchase is complete and its record is not yet frozen. Pending measurement: the NeoMundi measurement file the plan requires is missing or invalid. Analysis failed: the purchase is complete but its analysis did not run; it is redone with series.py analyse.",
-             "- Missing: no complete purchase was obtained for that day and model after the retries; the attempts are in the registry.",
+             "- Analysed: the purchase is complete and its record is frozen. Each of its twelve positions has a confirmed score or none; coverage is counted over these purchases.",
+             "- A position without a confirmed score has its reasons in the Matrix-final.json of the run: a score outside the band its check-items allow, evidence that did not pass the checker, or both. It is in no mean.",
+             "- Raw score: the sum of the twelve scores of one purchase, from -36 to +24. Defect index: class x |negative score|, summed. Both exist only for a purchase with all twelve positions confirmed, and the means are over such purchases only.",
+             "- Pending: complete, not yet frozen. Failed: no complete purchase after the retries (technical failure, limit, drift, budget, not started). Missing: no attempt recorded.",
              "",
              "## What this does not show", "",
              "One scenario, one service, one purchase per model per day. It measures how each configuration behaved against one declared standard on those days. It is not a ranking of the models in general and not a conclusion about any company.",

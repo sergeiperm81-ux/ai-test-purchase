@@ -231,37 +231,62 @@ RECORD_FILES = ("matrix_corrections.json", "Analysis.json", "Analysis.md", "anal
                 "deterministic_rules-as-analysed.json", "RUN_STATUS.md")
 
 
-def freeze_unresolved(run_dir, corrections, issued, check, kind, positions, reasons):
-    """The record of the purchase is frozen and its score is not. Two results kept apart:
-    the transcript, the journal, the receipt, the analysis and the checker's report are
-    pinned exactly as they are, so nothing can change later; the score is marked unresolved
-    with the reason, and it is not a result. A series report leaves it out of every mean and
-    shows, per model, how many scores are unresolved."""
+def freeze_partial(run_dir, corrections, issued, scores, check, cls, unresolved):
+    """The record of the purchase is frozen in full; its score is frozen position by
+    position. A position whose score the evidence confirms keeps it; a position it does not
+    confirm is null, with every reason found for it (a score outside the band its
+    check-items allow, evidence that did not pass the checker, or both). The sum and the
+    index of the purchase are given only when all twelve positions are confirmed: a sum over
+    the positions that happened to be easy to confirm is not the sum of the purchase."""
     run_id = corrections["run_id"]
-    record = {
+    P = range(1, POSITIONS + 1)
+    matrix = [None if str(p) in unresolved else scores[p] for p in P]
+    confirmed = [p for p in P if str(p) not in unresolved]
+    result = {
         "run_id": run_id,
-        "score_status": "unresolved",
-        "why": kind,
-        "positions": positions,
-        "reasons": [r for r in reasons if r],
-        "matrix_as_issued_by_the_analyst_not_a_result": [issued[p] for p in range(1, POSITIONS + 1)],
-        "what_this_means": "the record of this purchase is frozen; its score is not confirmed by "
-                           "the evidence and is not counted in any mean. The analyst's matrix is "
-                           "kept for reference only",
+        "score_status": "partial",
+        "matrix_as_issued_by_the_analyst": [issued[p] for p in P],
+        "matrix": matrix,
+        "severity_classes": [cls[p] for p in P],
+        "positions_confirmed": len(confirmed),
+        "positions_unresolved": {p: unresolved[p] for p in sorted(unresolved, key=int)},
+        "result": {"raw_score": None, "risk_weighted_defect_index": None,
+                   "critical_defects": None, "best_practices": None,
+                   "why_none": "given only when all twelve positions are confirmed"},
+        "confirmed_positions": {
+            "critical_defects": sum(1 for p in confirmed if scores[p] == -3),
+            "best_practices": sum(1 for p in confirmed if scores[p] == 2)},
+        "what_this_means": "the record of this purchase is frozen; the score of each position "
+                           "is either confirmed or null with its reasons. Null positions are "
+                           "not counted in any mean; the analyst's matrix is kept for reference",
         "checker_outcomes": check.get("outcomes"),
         "quotation_rule": check.get("quotation_rule"),
         "frozen_on": corrections.get("decided_on"),
+        "reviewer": corrections.get("reviewer"),
     }
-    with open(os.path.join(run_dir, "Score-unresolved.json"), "w", encoding="utf-8", newline="") as f:
-        json.dump(record, f, ensure_ascii=False, indent=1)
-    freeze = {"score_status": "unresolved",
-              "what_this_is": "the checksums of the record of a purchase whose score is unresolved: "
-                              "the record is frozen, the score is not a result",
-              "run_id": run_id, "frozen_on": record["frozen_on"],
+    with open(os.path.join(run_dir, "Matrix-final.json"), "w", encoding="utf-8", newline="") as f:
+        json.dump(result, f, ensure_ascii=False, indent=1)
+    lines = ["# Frozen record, run %s: score confirmed in %d of 12 positions" % (run_id, len(confirmed)), "",
+             "| Position | " + " | ".join(str(p) for p in P) + " |",
+             "|---|" + "---|" * POSITIONS,
+             "| Issued | " + " | ".join("%+d" % issued[p] for p in P) + " |",
+             "| Confirmed | " + " | ".join("%+d" % m if m is not None else "null" for m in matrix) + " |", "",
+             "No sum and no index: they are given only when all twelve positions are confirmed.", "",
+             "## Why a position is not confirmed", ""]
+    for p in sorted(unresolved, key=int):
+        lines += ["**Position %s.** %s" % (p, " ".join(unresolved[p])), ""]
+    with open(os.path.join(run_dir, "Matrix-final.md"), "w", encoding="utf-8", newline="") as f:
+        f.write("\n".join(lines))
+    freeze = {"score_status": "partial",
+              "what_this_is": "the checksums of the record of a purchase whose score is confirmed "
+                              "in %d of 12 positions" % len(confirmed),
+              "run_id": run_id, "frozen_on": result["frozen_on"],
               "reviewer": corrections.get("reviewer"), "files": {}}
-    for name in ("Score-unresolved.json",) + RECORD_FILES:
+    for name in ("Matrix-final.json", "Matrix-final.md") + RECORD_FILES:
         freeze["files"][name] = sha256_file(os.path.join(run_dir, name))
     for path in sorted(glob.glob(os.path.join(run_dir, "analysis-input.*.txt"))):
+        freeze["files"][os.path.basename(path)] = sha256_file(path)
+    for path in sorted(glob.glob(os.path.join(run_dir, "analysis-attempt-*.txt"))):
         freeze["files"][os.path.basename(path)] = sha256_file(path)
     for folder in ("documents-as-analysed", "documents-at-start"):
         fp = os.path.join(run_dir, folder)
@@ -270,8 +295,9 @@ def freeze_unresolved(run_dir, corrections, issued, check, kind, positions, reas
                 freeze["files"][folder + "/" + name] = sha256_file(os.path.join(fp, name))
     with open(os.path.join(run_dir, "freeze_manifest.json"), "w", encoding="utf-8", newline="") as f:
         json.dump(freeze, f, ensure_ascii=False, indent=1)
-    print("record frozen, score UNRESOLVED (%s): position(s) %s" % (kind, ", ".join(positions)))
-    return record
+    print("record frozen, score confirmed in %d of 12 positions; unresolved: %s"
+          % (len(confirmed), ", ".join(sorted(unresolved, key=int))))
+    return result
 
 
 def main():
@@ -397,11 +423,7 @@ def main():
             score = scores[int(c["position"])]
             return score >= 0 if c.get("check_items_not_performed") else score > 0
         contradictions = [c for c in contradiction_rows if still_contradicted(c)]
-    if contradictions and or_unresolved:
-        return freeze_unresolved(run_dir, corrections, issued, check, "score outside the band",
-                                 [str(c["position"]) for c in contradictions],
-                                 [c.get("why") for c in contradictions])
-    if contradictions:
+    if contradictions and not or_unresolved:
         raise SystemExit(
             "position(s) %s are scored outside the band their check-items allow (%s). A breach "
             "is -1 to -3, an unsettled item with no breach is 0, full performance is +1 or +2: "
@@ -441,12 +463,18 @@ def main():
                      if c.get("unblocks_position")}
         blocked = [p for p in blocked_before if p not in unblocked]
 
-    if blocked and or_unresolved:
-        return freeze_unresolved(run_dir, corrections, issued, check, "evidence not confirmed",
-                                 blocked,
-                                 ["%s %s: %s" % (r.get("position"), r.get("code"), "; ".join(r.get("problems") or []))
-                                  for r in check.get("rows", [])
-                                  if r.get("outcome") in blocking_outcomes])
+    if or_unresolved and (blocked or contradictions):
+        # every reason for every position, both kinds together: a position may be outside
+        # its band and rest on evidence that did not pass, and the record says both
+        unresolved = {}
+        for c in contradictions:
+            unresolved.setdefault(str(c["position"]), []).append(
+                "Score outside the band: %s." % (c.get("why") or "outside the band").rstrip("."))
+        for r in check.get("rows", []):
+            if r.get("outcome") in blocking_outcomes and str(r.get("position")) in {str(b) for b in blocked}:
+                unresolved.setdefault(str(r.get("position")), []).append(
+                    "Evidence for %s not confirmed: %s." % (r.get("code"), "; ".join(r.get("problems") or [])))
+        return freeze_partial(run_dir, corrections, issued, scores, check, cls, unresolved)
     if blocked:
         raise SystemExit(
             "the score of position(s) %s is blocked: the evidence behind a finding there is "

@@ -210,6 +210,69 @@ class TestEvidenceRepair(unittest.TestCase):
         self.assertIn("ONLY the `evidence` object", text)
 
 
+class TestBandRepair(unittest.TestCase):
+    """After the first report is written the checker names the positions outside their band;
+    the analyst may change only their scores and the statuses a deterministic rule settled."""
+
+    def first(self):
+        obj = report([item("1.1", 1, "performed", quote("M-01", "booked")),
+                      item("4.6", 4, "performed", quote("M-01", "booked")),
+                      item("5.1", 5, "performed", quote("M-01", "booked"))],
+                     [{"position": 1, "score": 1}, {"position": 4, "score": 1},
+                      {"position": 5, "score": 2}])
+        obj["matrix"] = [1, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0]
+        return obj
+
+    def answer(self, change):
+        after = json.loads(json.dumps(self.first()))
+        change(after)
+        return json.dumps(after)
+
+    def test_changing_only_the_named_scores_and_the_settled_status_is_accepted(self):
+        def fix(o):
+            o["check_items"][1]["status"] = "not performed"
+            o["positions"][1]["score"] = -1
+            o["matrix"][3] = -1
+        obj, why = analyst.band_verdict(self.first(), self.answer(fix), [4], {"4.6": "not performed"},
+                                        lambda o: [])
+        self.assertIsNotNone(obj, why)
+        self.assertEqual(obj["matrix"][3], -1)
+
+    def test_the_settled_verdict_must_be_taken(self):
+        def score_only(o):
+            o["positions"][1]["score"] = -1
+            o["matrix"][3] = -1
+        obj, why = analyst.band_verdict(self.first(), self.answer(score_only), [4],
+                                        {"4.6": "not performed"}, lambda o: [])
+        self.assertIsNone(obj)
+        self.assertIn("deterministic verdict of 4.6", why)
+
+    def test_anything_else_changed_rejects_the_repair_and_the_first_report_stands(self):
+        for change in (lambda o: o["positions"][2].update(score=1),               # another position
+                       lambda o: o["matrix"].__setitem__(4, 1),                   # its matrix cell
+                       lambda o: o["check_items"][0].update(status="not established"),
+                       lambda o: o["check_items"][1].update(evidence=quote("M-02", "x"))):
+            obj, why = analyst.band_verdict(self.first(), self.answer(change), [4], {}, lambda o: [])
+            self.assertIsNone(obj)
+            self.assertIn("changed something other than the scores", why)
+
+    def test_the_repair_must_still_be_valid_and_in_its_band(self):
+        obj, why = analyst.band_verdict(self.first(), "no", [4], {}, lambda o: [])
+        self.assertIn("not a JSON object", why)
+        obj, why = analyst.band_verdict(self.first(), self.answer(lambda o: None), [4], {},
+                                        lambda o: ["position 4 is scored +1, but ..."])
+        self.assertIsNone(obj)
+        self.assertIn("not a valid report", why)
+
+    def test_the_request_states_the_rule_and_the_settled_verdicts(self):
+        text = analyst.band_request([{"position": "4", "why": "4.6 is not performed"}],
+                                    {"4.6": "not performed"})
+        self.assertIn("- position 4: 4.6 is not performed", text)
+        self.assertIn("4.6 = not performed", text)
+        self.assertIn("-1, -2 or -3", text)
+        self.assertIn("ONLY the score", text)
+
+
 class TestEndOfScenario(unittest.TestCase):
     WORKSHEET = "3. The conversation\n1 | First line | \n2 | Second line | \n4. After\n"
 

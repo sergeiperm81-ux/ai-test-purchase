@@ -165,26 +165,38 @@ class TestReviewResolution(unittest.TestCase):
         self.assertTrue(any("not identifiers of this run" in p for p in rr.admissible(self.run, ev, known)))
 
 
-class TestUnresolvedInTheReport(unittest.TestCase):
-    """A purchase whose score is unresolved stays out of every mean, its share is shown per
-    model, and above the threshold the comparison across models is withheld."""
+class TestPositionsInTheReport(unittest.TestCase):
+    """A null position stays out of every mean; the share of null positions per model is
+    over the positions of analysed purchases only; pending, failed and missing are shown
+    apart; a purchase has a sum only when all twelve positions are confirmed."""
 
-    def test_shares_and_the_threshold(self):
+    def data(self):
+        full = {"day": 1, "kind": "analysed", "full": True, "raw": 6, "index": 4,
+                "matrix": [1] * 10 + [-1, -1], "status": "frozen"}
+        part = {"day": 2, "kind": "analysed", "full": False, "raw": None, "index": None,
+                "matrix": [None, None, None] + [1] * 9, "status": "partial"}
+        return {"A": [full, part, {"day": 3, "kind": "pending", "status": "pending_measurement"}],
+                "B": [dict(full, raw=-2, index=12), {"day": 2, "kind": "failed", "status": "technical_failure"}]}
+
+    def test_the_denominator_is_the_positions_of_analysed_purchases(self):
         import series_report as sr
         pl = {"labels": ["A", "B"]}
-        data = {"A": [{"day": 1, "frozen": True, "raw": 5, "index": 0, "critical": 0, "best": 0, "matrix": [0] * 12},
-                      {"day": 2, "frozen": False, "unresolved": True}],
-                "B": [{"day": 1, "frozen": True, "raw": -3, "index": 9, "critical": 0, "best": 0, "matrix": [0] * 12},
-                      {"day": 2, "frozen": True, "raw": -1, "index": 3, "critical": 0, "best": 0, "matrix": [0] * 12}]}
-        shares = sr.unresolved_shares(pl, data)
-        self.assertEqual(shares["A"], (1, 2, 0.5))
-        self.assertEqual(shares["B"], (0, 2, 0.0))
-        self.assertEqual(sr.withheld(shares, 0.2), ["A"])
-        self.assertEqual(sr.withheld(shares, 0.5), [])            # at the threshold, not above it
-        rows = sr.table(pl, data, [1, 2], compare=True)
-        self.assertIn("| A | 2 | 2 | 1 | 1 (50%) | 0 | 0 | 5.00 |", rows[2])   # the mean is over the confirmed score only
-        rows = sr.table(pl, data, [1, 2], compare=False)
-        self.assertIn("withheld", rows[3])
+        shares = sr.coverage(pl, self.data())
+        self.assertEqual(shares["A"], (3, 24, 0.125))     # the pending purchase is not in it
+        self.assertEqual(shares["B"], (0, 12, 0.0))       # neither is the failed one
+        self.assertEqual(sr.withheld(shares, 0.2), [])
+        self.assertEqual(sr.withheld(shares, 0.1), ["A"])
+
+    def test_counts_apart_and_means_only_over_full_purchases(self):
+        import series_report as sr
+        pl = {"labels": ["A", "B"]}
+        rows = sr.purchases(pl, self.data(), [1, 2, 3])
+        self.assertIn("| A | 3 | 2 | 1 | 1 | 1 | 0 | 0 | 3 of 24 (12%) |", rows[2])
+        self.assertIn("| B | 3 | 1 | 1 | 0 | 0 | 1 | 1 | 0 of 12 (0%) |", rows[3])
+        cmp_rows = sr.comparison(pl, self.data())
+        self.assertIn("| A | 1 | 6.00 | 4.00 |", cmp_rows[2])     # the partial purchase is not in the mean
+        pos = sr.positions(pl, self.data())
+        self.assertIn("| 1 | 1/2, mean +1.00 | 1/1, mean +1.00 |", pos[2])
 
 
 if __name__ == "__main__":

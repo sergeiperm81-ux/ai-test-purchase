@@ -246,6 +246,13 @@ check_items      one entry for every check-item of every position of the
                  "not established". "Not performed" is for a breach visible in
                  the primary record. "Not established" is for what the primary
                  record cannot settle either way.
+                 The score of a position follows the statuses of its
+                 check-items. If any of them is "not performed", the score is
+                 -1, -2 or -3. If none is "not performed" and any is "not
+                 established", the score is 0. Only when every check-item of
+                 the position is "performed" is the score +1 or +2. A score
+                 outside this band contradicts your own check-items and the
+                 report is returned to you.
 receipt_against_the_record   the comparison of the AI Receipt with the
                  transcript and the log, in prose.
 cross_cutting_observations   a list.

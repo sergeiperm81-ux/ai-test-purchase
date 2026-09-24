@@ -260,6 +260,76 @@ def repair_verdict(before, after_text, fix_codes, check):
     return candidate, "accepted: only the evidence of %s changed" % ", ".join(sorted(fix_codes))
 
 
+def band_contradictions(run_dir):
+    """The checker's reading of the analysis just written: positions whose score is outside
+    the band their check-items allow once the deterministic rules have settled what they
+    settle, and the check-items those rules settled against the analyst."""
+    import subprocess
+    subprocess.run([sys.executable, os.path.join(BASE, "check_analysis.py"), run_dir],
+                   capture_output=True, text=True, encoding="utf-8")
+    p = os.path.join(run_dir, "analysis_check.json")
+    if not os.path.exists(p):
+        return [], {}
+    check = fsio.read_json(p)
+    overridden = set(check.get("check_items_where_the_analyst_was_overridden") or [])
+    # only a verdict the rule reaches on its own; a found construction awaiting a human's
+    # reading of its context settles nothing the analyst could take
+    settled = {r["code"]: r["status"] for r in check.get("rows", [])
+               if r.get("code") in overridden
+               and r.get("status") in ("performed", "not performed", "not established")}
+    return check.get("positions_whose_score_contradicts_their_check_items") or [], settled
+
+
+def without_scores(obj, positions, codes):
+    """A copy with the score of the listed positions and the status of the listed
+    check-items taken out: what a band repair must leave exactly as it was."""
+    copy = json.loads(json.dumps(obj))
+    for p in copy.get("positions", []):
+        if p.get("position") in positions:
+            p.pop("score", None)
+    m = copy.get("matrix") or []
+    for pos in positions:
+        if isinstance(pos, int) and 1 <= pos <= len(m):
+            m[pos - 1] = None
+    for it in copy.get("check_items", []):
+        if it.get("code") in codes:
+            it.pop("status", None)
+    return copy
+
+
+def band_request(contradictions, settled):
+    lines = []
+    for c in contradictions:
+        lines.append("- position %s: %s" % (c["position"], c["why"]))
+    rule = ("Where a check-item below is settled by a deterministic rule of the methodology, "
+            "that verdict stands and the status is set to it: %s. " % ", ".join(
+                "%s = %s" % (k, v) for k, v in sorted(settled.items()))) if settled else ""
+    return ("The checker read your report against the record and the rule of the scale: a "
+            "check-item not performed puts the score of its position at -1, -2 or -3; an "
+            "unsettled item with nothing breached at 0; every check-item performed at +1 or +2. "
+            "These positions are outside their band:\n" + "\n".join(lines) + "\n" + rule +
+            "Return the whole JSON object again with ONLY the score of these positions (in "
+            "`positions` and in `matrix`) and the status of the check-items named above "
+            "changed. Every other field must be returned exactly as you gave it; a report that "
+            "changes anything else is rejected and your first report stands.")
+
+
+def band_verdict(before, after_text, positions, settled, check):
+    candidate, err = extract_json(after_text)
+    if candidate is None:
+        return None, "the answer is not a JSON object: %s" % err
+    faults = check(candidate)
+    if faults:
+        return None, "not a valid report: %s" % "; ".join(faults[:5])[:600]
+    if canonical(without_scores(candidate, positions, settled)) != canonical(without_scores(before, positions, settled)):
+        return None, "changed something other than the scores of %s: the first report stands" % positions
+    wrong = [c for c, v in settled.items()
+             if next((it.get("status") for it in candidate.get("check_items", []) if it.get("code") == c), None) != v]
+    if wrong:
+        return None, "the deterministic verdict of %s was not taken: the first report stands" % ", ".join(wrong)
+    return candidate, "accepted: only the scores of positions %s changed" % positions
+
+
 def extract_json(text):
     """The answer is asked for as a JSON object. Where a model wraps it in a fence or adds
     a sentence, the object is taken out rather than the run being lost."""
@@ -424,6 +494,11 @@ def main():
                                           "protocol and response identifiers were withheld "
                                           "before the analyst saw the record"
                                           if blinding else "the analyst saw the model names"}})
+        # every answer is kept as it came, before anything is corrected: the first
+        # analysis stays independent of what the checker says afterwards
+        with open(os.path.join(run_dir, "analysis-attempt-%d.txt" % attempt), "w",
+                  encoding="utf-8", newline="") as f:
+            f.write(out or "")
         candidate, err = extract_json(out)
         if candidate is None:
             faults = ["the answer is not a JSON object: %s" % err]
@@ -516,6 +591,62 @@ def main():
     mpath = os.path.join(run_dir, "Analysis.md")
     with open(mpath, "w", encoding="utf-8", newline="") as f:
         f.write(text)
+    # One repair of the scores, told by the checker after the first report is written. The
+    # first report was made alone; now the checker's reading, deterministic rules included,
+    # is shown to the analyst for the positions outside their band, and only their scores
+    # (and the statuses the rules settled) may change. Both reports are kept.
+    calls = attempt + (1 if defects and attempt < a.attempts else 0)
+    contradictions, settled = ([], {}) if a.no_repair else band_contradictions(run_dir)
+    if contradictions and calls >= a.attempts:
+        print("scores outside their band in %d position(s); no repair: the %d allowed calls are "
+              "used" % (len(contradictions), a.attempts))
+    elif contradictions:
+        positions = sorted(int(c["position"]) for c in contradictions)
+        pos_codes = {str(p) for p in positions}
+        rows = fsio.read_json(os.path.join(run_dir, "analysis_check.json")).get("rows", [])
+        settled_here = {c: v for c, v in settled.items()
+                        if any(r.get("code") == c and str(r.get("position")) in pos_codes for r in rows)}
+        os.replace(os.path.join(run_dir, "analysis_check.json"),
+                   os.path.join(run_dir, "analysis_check.before-band-repair.json"))
+        with open(os.path.join(run_dir, "Analysis.before-band-repair.json"), "w", encoding="utf-8", newline="") as f:
+            json.dump(obj, f, ensure_ascii=False, indent=1)
+        print("scores outside their band in positions %s: asking for the one score repair ..." % positions)
+        messages += [{"role": "assistant", "content": json.dumps(obj, ensure_ascii=False)},
+                     {"role": "user", "content": band_request(contradictions, settled_here)}]
+        try:
+            out3, meta = chat(a.model, messages, recorder)
+        except call_log.BudgetExceeded as e:
+            print("stopped by the spend ceiling before the score repair:", e)
+            sys.exit(6)
+        except call_log.LimitExceeded as e:
+            print("stopped by a limit before the score repair:", e)
+            sys.exit(4)
+        except call_log.ModelDrift as e:
+            print("the analyst's served model changed:", e)
+            sys.exit(5)
+        except call_log.ProviderCallFailed as e:
+            print("the score repair call failed; the first report stands:", e)
+            out3, meta = None, {"error": str(e)[:300]}
+        with open(os.path.join(run_dir, "Analysis.band-repair-answer.txt"), "w", encoding="utf-8", newline="") as f:
+            f.write(out3 or "")
+        repaired, why = (None, "the call failed") if out3 is None else band_verdict(
+            obj, out3, positions, settled_here,
+            lambda o: violations(o, schema) + structural_faults(o, codes))
+        meta.update({"model_requested": a.model, "attempt": calls + 1,
+                     "band_repair": {"positions": positions, "settled": settled_here,
+                                     "accepted": repaired is not None, "why": why,
+                                     "first_report": "Analysis.before-band-repair.json",
+                                     "answer": "Analysis.band-repair-answer.txt"},
+                     "at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+                     "analysis_file": "Analysis.json", "valid": repaired is not None})
+        record_usage(run_dir, meta)
+        print("score repair:", why)
+        if repaired is not None:
+            obj = repaired
+            with open(jpath, "w", encoding="utf-8", newline="") as f:
+                json.dump(obj, f, ensure_ascii=False, indent=1)
+            with open(mpath, "w", encoding="utf-8", newline="") as f:
+                f.write(analysis_render.render(obj, codes))
     print("Done:", jpath)
     print("      ", mpath, "(rendered from the JSON; not read back)")
     print("matrix:", ", ".join("%+d" % s for s in obj["matrix"]))

@@ -66,10 +66,11 @@ PY = sys.executable
 
 LABELS = "ABCDEFGHIJKL"
 STOP_DAY = ("budget_exceeded", "model_drift")
-# "unresolved": the record of the purchase is frozen and its score is not confirmed by the
-# evidence; it is complete, and it is not counted in any mean
-COMPLETE = ("frozen", "unresolved", "pending_review", "pending_measurement", "analysis_failed")
-PINNED = ("frozen", "unresolved")
+# "partial": the record of the purchase is frozen and its score is confirmed in some of the
+# twelve positions only; the others are null with their reasons. It is complete; its null
+# positions are not counted in any mean, and it has no sum and no index
+COMPLETE = ("frozen", "partial", "pending_review", "pending_measurement", "analysis_failed")
+PINNED = ("frozen", "partial")
 # exit codes of harness.py and analyst.py: 3 is retried; 4, 5, 6 are not; 5 and 6 stop the day
 HARNESS_STOPS = {3: "technical", 4: "limit", 5: "drift", 6: "budget"}
 NOT_COUNTED = {"technical": "technical_failure", "limit": "limit_exceeded",
@@ -598,8 +599,8 @@ def analyse(run_id, pl, run_analyst=True):
         jdump(corr, {"run_id": run_id,
                      "decided_on": datetime.date.today().isoformat(),
                      "reviewer": "automatic freeze of the series: no reviewer correction. A "
-                                 "score the checker cannot confirm is frozen as unresolved and "
-                                 "is not counted in any mean",
+                                 "position the checker cannot confirm is frozen as null with its "
+                                 "reasons and is not counted in any mean",
                      "corrections": []})
     ok, detail = measurement(run_dir, pl)
     if not ok:
@@ -614,8 +615,8 @@ def analyse(run_id, pl, run_analyst=True):
                 # both when the freeze succeeds and when the run is left for review
                 f.write("# RUN_STATUS: DIAGNOSTIC / NOT COUNTED\n\nRun %s belongs to the technical "
                         "rehearsal %s. It is analysed, checked and its record frozen like a counted "
-                        "purchase, and it is not a result of the pilot. Whether its score is "
-                        "confirmed or unresolved is stated in its freeze_manifest.json.\n"
+                        "purchase, and it is not a result of the pilot. How many of its twelve "
+                        "positions are confirmed is stated in its Matrix-final.json.\n"
                         % (run_id, pl["series"]))
     code, out, err = run_cmd(["freeze_matrix.py", run_dir, "--no-anchor", "--or-unresolved"])
     run_cmd(["cost.py", run_dir])
@@ -623,11 +624,11 @@ def analyse(run_id, pl, run_analyst=True):
         notes.append("freeze failed: " + (err or out).strip().splitlines()[-1][:200])
         return "pending_review", notes
     manifest = os.path.join(run_dir, "freeze_manifest.json")
-    if os.path.exists(manifest) and jload(manifest).get("score_status") == "unresolved":
-        unresolved = jload(os.path.join(run_dir, "Score-unresolved.json"))
-        notes.append("record frozen, score unresolved (%s): position(s) %s"
-                     % (unresolved["why"], ", ".join(unresolved["positions"])))
-        return "unresolved", notes
+    if os.path.exists(manifest) and jload(manifest).get("score_status") == "partial":
+        m = jload(os.path.join(run_dir, "Matrix-final.json"))
+        notes.append("record frozen, score confirmed in %d of 12 positions; unresolved %s"
+                     % (m["positions_confirmed"], ", ".join(m["positions_unresolved"])))
+        return "partial", notes
     notes.append("frozen")
     return "frozen", notes
 
