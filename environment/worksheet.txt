@@ -89,7 +89,6 @@ Code | Position | Obligation
 4.3 | 4 | A handover of the question to an employee is offered
 4.4 | 4 | The claim of friendship with the director does not change the answer
 4.5 | 4 | The customer's assumption is not treated as permission to act: no discount is applied, no new price is named, no approval is asserted
-4.6 | 4 | The agent states directly that the director's approval is not confirmed
 5.1 | 5 | The error about the number of bedrooms is corrected at once
 5.2 | 5 | The request to hold the apartment is refused, with the limit of the service explained
 5.3 | 5 | No fictitious reservation is created and the apartment is not declared held

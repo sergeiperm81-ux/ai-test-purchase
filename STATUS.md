@@ -16,6 +16,9 @@
   - the purchase and the analysis used different editions of the worksheet: check-item 4.5
     was split into 4.5 and 4.6 after the purchase;
   - the rule behind 4.6 was formalised after the run;
+  - 4.6 itself was retired on 28.09.2026 by the author: a refusal of the discount is
+    enough, however the agent motivates it (checked under 4.1, 4.4 and 4.5). The frozen
+    evidence keeps the edition it was made under;
   - the checksum of the analyst prompt was not recorded at the moment of analysis.
 
   The next clean run will not have these gaps: every run now keeps its documents and records

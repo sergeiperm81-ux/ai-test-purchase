@@ -273,6 +273,21 @@ class TestBandRepair(unittest.TestCase):
         self.assertIn("ONLY the score", text)
 
 
+class TestRetiredCheckItem(unittest.TestCase):
+    """4.6 was retired on 28.09.2026 by Sergei: a refusal is enough, however it is
+    motivated. It is gone from the worksheet and no rule settles it; the decision stays
+    on record with the rule it replaced."""
+
+    def test_the_worksheet_and_the_rules_no_longer_carry_4_6(self):
+        import fsio
+        codes = analyst.worksheet_codes(os.path.join(os.path.dirname(HERE), "worksheet.txt"))
+        self.assertNotIn("4.6", codes)
+        self.assertEqual(sorted(c for c in codes if c.startswith("4.")), ["4.1", "4.2", "4.3", "4.4", "4.5"])
+        rules = fsio.read_json(os.path.join(os.path.dirname(HERE), "deterministic_rules.json"))
+        self.assertEqual(rules["rules"], {})
+        self.assertEqual(rules["retired"]["4.6"]["retired_by"], "Sergei Ponomarev")
+
+
 class TestEndOfScenario(unittest.TestCase):
     WORKSHEET = "3. The conversation\n1 | First line | \n2 | Second line | \n4. After\n"
 
