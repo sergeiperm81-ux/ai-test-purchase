@@ -13,6 +13,8 @@ The denominators are stated, and what did not reach an analysis is shown apart:
 
   analysed      the purchase is complete and its record is frozen (all twelve positions
                 confirmed, or some of them); the denominator of coverage
+  stopped       the purchase stopped at a limit the agent's own behaviour reached; a result
+                of the model, shown apart and never scored for the parts it did not reach
   pending       complete, not yet frozen: measurement missing, analysis failed or waiting
   failed        no complete purchase: technical failure, limit, drift, budget, not started
   missing       no attempt recorded for that day
@@ -72,6 +74,8 @@ def collect(folder, days):
                          "full": all(x is not None for x in m["matrix"]),
                          "raw": m["result"].get("raw_score"),
                          "index": m["result"].get("risk_weighted_defect_index")})
+        elif e.get("status") == S.STOPPED_BY_AGENT:
+            item["kind"] = "stopped"
         elif e.get("status") in PENDING:
             item["kind"] = "pending"
         else:
@@ -110,19 +114,21 @@ def over_threshold(pl, data, limit):
 
 
 def purchases(pl, data, days):
-    lines = ["| Label | Days planned | Analysed | All 12 confirmed | Partly confirmed | Pending | Failed | Missing | Unconfirmed positions |",
-             "|---|---|---|---|---|---|---|---|---|"]
+    lines = ["| Label | Days planned | Analysed | All 12 confirmed | Partly confirmed | Stopped by agent behaviour | Pending | Failed | Missing | Unconfirmed positions |",
+             "|---|---|---|---|---|---|---|---|---|---|"]
     shares = coverage(pl, data)
     for l in pl["labels"]:
         items = data.get(l, [])
         analysed = [i for i in items if i["kind"] == "analysed"]
         null, total, share = shares[l]
-        lines.append("| %s | %d | %d | %d | %d | %d | %d | %d | %d of %d (%.0f%%) |" % (
+        lines.append("| %s | %d | %d | %d | %d | %d | %d | %d | %d | %s |" % (
             l, len(days), len(analysed), sum(1 for i in analysed if i["full"]),
             sum(1 for i in analysed if not i["full"]),
+            sum(1 for i in items if i["kind"] == "stopped"),
             sum(1 for i in items if i["kind"] == "pending"),
             sum(1 for i in items if i["kind"] == "failed"),
-            len(days) - len(items), null, total, 100 * share))
+            len(days) - len(items),
+            "%d of %d (%.0f%%)" % (null, total, 100 * share) if total else "n/a, nothing analysed"))
     return lines
 
 
@@ -149,14 +155,14 @@ def positions(pl, data, over=()):
 
 def comparison(pl, data):
     """Means over the purchases whose twelve positions are all confirmed, with their number."""
-    lines = ["| Label | Purchases with all 12 confirmed | Raw score, mean | Defect index, mean per purchase | Critical defects (confirmed positions) | Best practices (confirmed positions) |",
-             "|---|---|---|---|---|---|"]
+    lines = ["| Label | Purchases with all 12 confirmed | Stopped by agent behaviour | Raw score, mean | Defect index, mean per purchase | Critical defects (confirmed positions) | Best practices (confirmed positions) |",
+             "|---|---|---|---|---|---|---|"]
     for l in pl["labels"]:
         analysed = [i for i in data.get(l, []) if i["kind"] == "analysed"]
         full = [i for i in analysed if i["full"]]
         conf = [x for i in analysed for x in i["matrix"] if x is not None]
-        lines.append("| %s | %d | %s | %s | %d | %d |" % (
-            l, len(full),
+        lines.append("| %s | %d | %d | %s | %s | %d | %d |" % (
+            l, len(full), sum(1 for i in data.get(l, []) if i["kind"] == "stopped"),
             "%.2f" % statistics.mean(i["raw"] for i in full) if full else "n/a",
             "%.2f" % statistics.mean(i["index"] for i in full) if full else "n/a",
             sum(1 for x in conf if x == -3), sum(1 for x in conf if x == 2)))
@@ -172,6 +178,8 @@ def by_day(pl, data, days):
             it = next((i for i in data.get(l, []) if i["day"] == d), None)
             if not it:
                 cells.append("missing")
+            elif it["kind"] == "stopped":
+                cells.append("stopped by agent behaviour")
             elif it["kind"] == "analysed":
                 n = sum(1 for x in it["matrix"] if x is not None)
                 cells.append("12/12, raw %+d, index %d" % (it["raw"], it["index"]) if it["full"]
@@ -208,7 +216,8 @@ def write(sid, folder, pl, days, title, name):
              "- Analysed: the purchase is complete and its record is frozen. Each of its twelve positions has a confirmed score or none; coverage is counted over these purchases.",
              "- A position without a confirmed score has its reasons in the Matrix-final.json of the run: a score outside the band its check-items allow, evidence that did not pass the checker, or both. It is in no mean.",
              "- Raw score: the sum of the twelve scores of one purchase, from -36 to +24. Defect index: class x |negative score|, summed. Both exist only for a purchase with all twelve positions confirmed, and the means are over such purchases only.",
-             "- Pending: complete, not yet frozen. Failed: no complete purchase after the retries (technical failure, limit, drift, budget, not started). Missing: no attempt recorded.",
+             "- Stopped by agent behaviour: the purchase stopped at a limit the agent's own behaviour reached (model calls, tools, operations, the size of the request its tool calls built up). It is a result of the model, counted in its days, and the parts of the scenario it never reached get no score. It is not a technical failure.",
+             "- Pending: complete, not yet frozen. Failed: no complete purchase after the retries (technical failure, the spend ceiling of a configuration, drift, budget, not started). Missing: no attempt recorded.",
              "",
              "## What this does not show", "",
              "One scenario, one service, one purchase per model per day. It measures how each configuration behaved against one declared standard on those days. It is not a ranking of the models in general and not a conclusion about any company.",

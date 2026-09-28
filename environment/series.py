@@ -69,12 +69,24 @@ STOP_DAY = ("budget_exceeded", "model_drift")
 # "partial": the record of the purchase is frozen and its score is confirmed in some of the
 # twelve positions only; the others are null with their reasons. It is complete; its null
 # positions are not counted in any mean, and it has no sum and no index
-COMPLETE = ("frozen", "partial", "pending_review", "pending_measurement", "analysis_failed")
+# "stopped_by_agent_behaviour": the purchase stopped at a limit the agent's own behaviour
+# reached (model calls, tools, material operations, a request its own tool calls built up).
+# It is a result of the purchase, not a technical failure: it is not retried, it stays in
+# the denominator of the model, its record is pinned, and the parts of the scenario never
+# reached get no score
+STOPPED_BY_AGENT = "stopped_by_agent_behaviour"
+COMPLETE = ("frozen", "partial", "pending_review", "pending_measurement", "analysis_failed",
+            STOPPED_BY_AGENT)
 PINNED = ("frozen", "partial")
-# exit codes of harness.py and analyst.py: 3 is retried; 4, 5, 6 are not; 5 and 6 stop the day
-HARNESS_STOPS = {3: "technical", 4: "limit", 5: "drift", 6: "budget"}
-NOT_COUNTED = {"technical": "technical_failure", "limit": "limit_exceeded",
-               "drift": "model_drift", "budget": "budget_exceeded"}
+# closed for good: nothing more is expected of the purchase on that day
+CLOSED = PINNED + (STOPPED_BY_AGENT,)
+# exit codes of harness.py: 3 is retried; 4, 5, 6 and 7 are not; 5 and 6 stop the day
+HARNESS_STOPS = {3: "technical", 4: "agent", 5: "drift", 6: "budget", 7: "cap"}
+NOT_COUNTED = {"technical": "technical_failure", "agent": STOPPED_BY_AGENT,
+               "drift": "model_drift", "budget": "budget_exceeded",
+               "cap": "configuration_cap_exceeded"}
+# exit codes of analyst.py: the analyst's own limits are not the agent's behaviour
+ANALYST_STOPS = {4: "limit_exceeded", 5: "model_drift", 6: "budget_exceeded"}
 LIMIT_KEYS = ("max_model_calls_per_purchase", "max_tool_rounds_per_turn",
               "max_tool_calls_per_response", "max_tool_calls_per_turn",
               "max_material_operations_per_purchase", "max_call_retries", "max_analyst_attempts")
@@ -460,6 +472,28 @@ def record(folder, entry):
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
+def reclassify(a):
+    """A purchase recorded as limit_exceeded before the agent's behaviour was an outcome of
+    its own: when its closure is a limit of the agent (not a spend ceiling), one entry is
+    appended that records it as stopped_by_agent_behaviour, with the operator's reason. The
+    first entry stays; nothing in the run changes."""
+    sid, folder = current_series()
+    prior = next((e for e in reversed(registry(folder)) if e.get("run_id") == a.run), None)
+    if not prior:
+        raise SystemExit("run %s is not in the current series registry" % a.run)
+    if prior["status"] != "limit_exceeded":
+        raise SystemExit("only a limit_exceeded purchase is reclassified; %s is %s" % (a.run, prior["status"]))
+    closure = str((jload(os.path.join(RUNS, a.run, "manifest.json")).get("closure_reason")) or "")
+    if not closure.startswith("limit_exceeded:") or "ceiling of" in closure:
+        raise SystemExit("the closure of %s is not a limit of the agent's behaviour: %s" % (a.run, closure[:200]))
+    record(folder, dict({k: prior.get(k) for k in ("series", "day", "date", "label", "attempt",
+                                                   "run_id", "supersedes", "retry", "started_at",
+                                                   "override")},
+                        status=STOPPED_BY_AGENT, reclassified_from="limit_exceeded",
+                        note="%s | reclassified by the operator: %s" % (closure[:300], a.why)))
+    print("%s recorded as %s" % (a.run, STOPPED_BY_AGENT))
+
+
 def latest(folder, day, label):
     """The last registry entry of a complete purchase for that day and label."""
     out = None
@@ -598,7 +632,7 @@ def analyse(run_id, pl, run_analyst=True):
         if s[0] == "analyst.py" and code in (4, 5, 6):
             last = ((err or out).strip().splitlines() or [""])[-1]
             notes.append("analyst stopped: %s" % last[:200])
-            return NOT_COUNTED[HARNESS_STOPS[code]], notes
+            return ANALYST_STOPS[code], notes
         if code != 0:
             notes.append("%s failed: %s" % (s[0], (err or out).strip().splitlines()[-1:]))
             return "analysis_failed", notes
@@ -908,7 +942,7 @@ def day_anchor(sid, folder, pl, d):
                                     "run_manifest_sha256": sha256_file(rm)}
     missing = [l for l in d["order"] if l not in runs]
     pending = [l for l in d["order"]
-               if l in runs and runs[l]["status"] not in PINNED]
+               if l in runs and runs[l]["status"] not in CLOSED]
     out = {"what_this_is": "the anchor of one day of the series: it pins the manifest of "
                            "every complete purchase of the day and lists every attempt. "
                            "The matrices are pinned by the week anchor, once the reviewer "
@@ -987,9 +1021,9 @@ def status(a):
     pl = jload(os.path.join(folder, "plan.json"))
     reg = registry(folder)
     short = {"frozen": " ok ", "partial": " pt ", "pending_review": " rv ",
-             "pending_measurement": " nm ", "analysis_failed": " an "}
+             "pending_measurement": " nm ", "analysis_failed": " an ", STOPPED_BY_AGENT: " agt"}
     stopped = {"limit_exceeded": " lim", "budget_exceeded": " bud", "model_drift": " drf",
-               "not_started": " ns "}
+               "configuration_cap_exceeded": " cap", "not_started": " ns "}
     print("series", sid, "| labels", " ".join(pl["labels"]), "| NeoMundi required:",
           (pl.get("neomundi") or {}).get("required"))
     print("day  date        " + "  ".join("%-4s" % l for l in pl["labels"]))
@@ -1008,8 +1042,9 @@ def status(a):
                 cells.append(" x%d " % len(es))
         if any(c.strip() != "." for c in cells) or d["date"] <= datetime.date.today().isoformat():
             print("%3d  %s  %s" % (d["day"], d["date"], "  ".join(cells)))
-    print("ok = frozen, pt = partly confirmed, rv = pending review, nm = pending measurement, "
-          "an = analysis failed, lim = limit, bud = budget, drf = model drift, "
+    print("ok = frozen, pt = partly confirmed, agt = stopped by the agent's behaviour, "
+          "rv = pending review, nm = pending measurement, an = analysis failed, lim = limit, "
+          "cap = ceiling of the configuration, bud = budget, drf = model drift, "
           "ns = not started, xN = N technical failures")
 
 
@@ -1075,6 +1110,8 @@ def main():
     p.add_argument("--approved-by", required=True)
     p.add_argument("--approved-estimate", required=True)
     p.add_argument("--override"); p.set_defaults(fn=retry)
+    p = sub.add_parser("reclassify"); p.add_argument("--run", required=True)
+    p.add_argument("--why", required=True); p.set_defaults(fn=reclassify)
     p = sub.add_parser("analyse"); p.add_argument("--run", required=True)
     p.add_argument("--rerun-analyst", action="store_true",
                    help="replace Analysis.json with a new paid analyst call; without this, "

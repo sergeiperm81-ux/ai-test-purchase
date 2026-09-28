@@ -35,8 +35,11 @@ import neomundi_client
 import confirm
 
 # how a purchase that stops on an exception ends: the closure written in the manifest and
-# the exit code series.py reads (3 is retried; 4, 5 and 6 are not, and 5 and 6 stop the day)
+# the exit code series.py reads (3 is retried; 4, 5, 6 and 7 are not, and 5 and 6 stop the
+# day). 4 is a limit the agent's own behaviour reached (calls, tools, operations, the size of
+# the request its tool calls built up); 7 is the spend ceiling of the configuration
 STOPS = ((call_log.BudgetExceeded, "budget_exceeded", 6),
+         (call_log.ConfigurationCapExceeded, "configuration_cap_exceeded", 7),
          (call_log.LimitExceeded, "limit_exceeded", 4),
          (call_log.ModelDrift, "model_drift", 5),
          (call_log.ProviderCallFailed, "technical_failure", 3))

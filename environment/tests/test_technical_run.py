@@ -184,6 +184,51 @@ class TestTechnicalRun(unittest.TestCase):
                         os.listdir(folder))
         shutil.rmtree(tmp, ignore_errors=True)
 
+    def test_the_agents_own_limit_is_an_outcome_and_a_spend_ceiling_is_not(self):
+        import harness, call_log
+        self.assertEqual(harness.stop_of(call_log.LimitExceeded("the request of the agent is 9 bytes"))[1], 4)
+        self.assertEqual(harness.stop_of(call_log.ConfigurationCapExceeded("ceiling of x"))[1], 7)
+        self.assertEqual(series.NOT_COUNTED[series.HARNESS_STOPS[4]], "stopped_by_agent_behaviour")
+        self.assertEqual(series.NOT_COUNTED[series.HARNESS_STOPS[7]], "configuration_cap_exceeded")
+        self.assertIn("stopped_by_agent_behaviour", series.COMPLETE)
+        self.assertNotIn("configuration_cap_exceeded", series.COMPLETE)
+        self.assertNotIn("configuration_cap_exceeded", series.STOP_DAY)
+        self.assertEqual(series.ANALYST_STOPS[4], "limit_exceeded")   # the analyst's limit is not the agent's
+
+    def test_reclassify_and_the_anchor_close_a_purchase_stopped_by_the_agent(self):
+        tmp = tempfile.mkdtemp(prefix="rcl-")
+        runs, folder = os.path.join(tmp, "runs"), os.path.join(tmp, "TECH-X")
+        os.makedirs(folder)
+        entries = []
+        for label, status, closure in (("A", "frozen", "completed"),
+                                       ("C", "limit_exceeded", "limit_exceeded: the request of the agent is 279262 bytes; the limit is 250000: it is not sent"),
+                                       ("F", "limit_exceeded", "limit_exceeded: ceiling of cohere 3.5 USD")):
+            rid = "TP-D01-%s" % label
+            os.makedirs(os.path.join(runs, rid))
+            series.jdump(os.path.join(runs, rid, "run_manifest.json"), {"run_id": rid})
+            series.jdump(os.path.join(runs, rid, "manifest.json"), {"closure_reason": closure})
+            if status == "frozen":
+                series.jdump(os.path.join(runs, rid, "freeze_manifest.json"), {"run_id": rid})
+            entries.append({"series": "TECH-X", "day": 1, "label": label, "run_id": rid, "status": status})
+        saved = (series.RUNS, series.registry, series.current_series, series.record)
+        written = []
+        series.RUNS, series.registry = runs, (lambda f: entries + written)
+        series.current_series = lambda: ("TECH-X", folder)
+        series.record = lambda f, e: written.append(e)
+        try:
+            series.reclassify(types.SimpleNamespace(run="TP-D01-C", why="six unasked receipt requests"))
+            self.assertEqual(written[-1]["status"], "stopped_by_agent_behaviour")
+            self.assertIn("six unasked receipt requests", written[-1]["note"])
+            with self.assertRaises(SystemExit):     # a spend ceiling is not the agent's behaviour
+                series.reclassify(types.SimpleNamespace(run="TP-D01-F", why="x"))
+            with self.assertRaises(SystemExit):     # a frozen purchase is not reclassified
+                series.reclassify(types.SimpleNamespace(run="TP-D01-A", why="x"))
+            technical_run.rehearsal_anchor("TECH-X", folder, {"schedule": [{"day": 1}], "labels": ["A", "C"]})
+        finally:
+            series.RUNS, series.registry, series.current_series, series.record = saved
+        self.assertTrue(os.path.exists(os.path.join(folder, "TECH-X.rehearsal.final.json")), os.listdir(folder))
+        shutil.rmtree(tmp, ignore_errors=True)
+
     def test_one_round_of_eight(self):
         sid, folder = self.ready()
         self.assertTrue(sid.startswith("TECH-"))

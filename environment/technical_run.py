@@ -135,7 +135,11 @@ def rehearsal_anchor(sid, folder, pl):
         for name in ("run_manifest.json", "freeze_manifest.json"):
             p = os.path.join(run_dir, name)
             entry[name] = series.sha256_file(p) if os.path.exists(p) else None
-        if e["status"] not in series.PINNED or not entry["freeze_manifest.json"]:
+        # a purchase stopped by the agent's behaviour is closed with its run manifest: it
+        # has no analysis to freeze, and it is not waited for
+        if e["status"] == series.STOPPED_BY_AGENT and entry["run_manifest.json"]:
+            pass
+        elif e["status"] not in series.PINNED or not entry["freeze_manifest.json"]:
             unfrozen.append(key)
         pinned[key] = entry
     out = {"what_this_is": "the anchor of the technical rehearsal: DIAGNOSTIC, NOT COUNTED. It "

@@ -176,7 +176,8 @@ class TestPositionsInTheReport(unittest.TestCase):
         part = {"day": 2, "kind": "analysed", "full": False, "raw": None, "index": None,
                 "matrix": [None, None, None] + [1] * 9, "status": "partial"}
         return {"A": [full, part, {"day": 3, "kind": "pending", "status": "pending_measurement"}],
-                "B": [dict(full, raw=-2, index=12), {"day": 2, "kind": "failed", "status": "technical_failure"}]}
+                "B": [dict(full, raw=-2, index=12), {"day": 2, "kind": "failed", "status": "technical_failure"},
+                      {"day": 3, "kind": "stopped", "status": "stopped_by_agent_behaviour"}]}
 
     def test_the_denominator_is_the_positions_of_analysed_purchases(self):
         import series_report as sr
@@ -207,10 +208,15 @@ class TestPositionsInTheReport(unittest.TestCase):
         import series_report as sr
         pl = {"labels": ["A", "B"]}
         rows = sr.purchases(pl, self.data(), [1, 2, 3])
-        self.assertIn("| A | 3 | 2 | 1 | 1 | 1 | 0 | 0 | 3 of 24 (12%) |", rows[2])
-        self.assertIn("| B | 3 | 1 | 1 | 0 | 0 | 1 | 1 | 0 of 12 (0%) |", rows[3])
+        self.assertIn("| A | 3 | 2 | 1 | 1 | 0 | 1 | 0 | 0 | 3 of 24 (12%) |", rows[2])
+        # the purchase stopped by the agent's behaviour is in B's days, apart from the failed
+        # one and from the analysed ones, and gets no score
+        self.assertIn("| B | 3 | 1 | 1 | 0 | 1 | 0 | 1 | 0 | 0 of 12 (0%) |", rows[3])
         cmp_rows = sr.comparison(pl, self.data())
-        self.assertIn("| A | 1 | 6.00 | 4.00 |", cmp_rows[2])     # the partial purchase is not in the mean
+        self.assertIn("| A | 1 | 0 | 6.00 | 4.00 |", cmp_rows[2])     # the partial purchase is not in the mean
+        self.assertIn("| B | 1 | 1 | -2.00 | 12.00 |", cmp_rows[3])   # the stopped one is shown, not scored
+        days = sr.by_day(pl, self.data(), [1, 2, 3])
+        self.assertIn("stopped by agent behaviour", days[4])
         pos = sr.positions(pl, self.data())
         self.assertIn("| 1 | 1/2, mean +1.00 | 1/1, mean +1.00 |", pos[2])
 
