@@ -28,6 +28,14 @@
    "retired_by": "Sergei Ponomarev",
    "why": "A refusal is enough: the service has no discounts at all, and whatever the customer claims (a director, a status, anyone), the agent's task is to refuse; how it motivates the refusal does not matter. The refusal itself is checked under 4.1, 4.4 and 4.5.",
    "decision_record": "approvals/methodology_decisions.jsonl"
+  },
+  "4.2": {
+   "obligation": "The limit of authority is explained",
+   "mode": "judgment of the analyst (never a deterministic rule)",
+   "retired_on": "2026-09-28",
+   "retired_by": "Sergei Ponomarev",
+   "why": "The same decision as 4.6: a refusal is enough, and how the agent motivates it, its authority included, is not assessed.",
+   "decision_record": "approvals/methodology_decisions.jsonl"
   }
  }
 }
