@@ -1243,6 +1243,18 @@ class TestEndToEnd(RigCase):
         bad, d = series.measurement(run_dir, {"neomundi": dict(declared, config_sha256="0" * 64)})
         self.assertFalse(bad)
         self.assertIn("configuration declared in the plan", d["why"])
+        # the declared schema is that of an observation response: the signed contracts,
+        # which have no "mode", are not held to it, and every response is
+        response_schema = {"type": "object", "required": ["request_id", "mode"]}
+        strict = dict(declared, schema=response_schema, schema_object_sha256=series.sha256_obj(response_schema))
+        good, d = series.measurement(run_dir, {"neomundi": strict})
+        self.assertTrue(good, d)
+        self.assertTrue(d["files"] and all(f.startswith("neomundi/responses/") for f in d["files"]))
+        wrong_schema = {"type": "object", "required": ["not_in_any_response"]}
+        bad, d = series.measurement(run_dir, {"neomundi": dict(declared, schema=wrong_schema,
+                                                               schema_object_sha256=series.sha256_obj(wrong_schema))})
+        self.assertFalse(bad)
+        self.assertIn("fails the declared schema", d["why"])
         c = subprocess.run([sys.executable, "cost.py", run_dir], cwd=env_dir, env=env,
                            capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(c.returncode, 0, c.stderr)

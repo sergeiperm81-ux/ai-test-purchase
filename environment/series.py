@@ -521,7 +521,12 @@ def measurement(run_dir, pl):
     if not os.path.exists(frozen) or sha256_file(frozen) != req.get("config_sha256"):
         return False, {"required": True, "why": "the run was not observed under the NeoMundi "
                                                 "configuration declared in the plan"}
-    files = [os.path.join(run_dir, f) for f in sorted(link_detail["files"])]
+    # the declared schema is the schema of an observation response; the signed contracts
+    # have a format of their own and are tied to the calls by verify_links, not by it
+    files = [os.path.join(run_dir, f) for f in sorted(link_detail["files"])
+             if f.replace(os.sep, "/").startswith("neomundi/responses/")]
+    if not files:
+        return False, {"required": True, "why": "no observation response to check against the schema"}
     schema = req.get("schema")
     if not isinstance(schema, dict) or sha256_obj(schema) != req.get("schema_object_sha256"):
         return False, {"required": True, "why": "the plan has no intact NeoMundi schema"}
