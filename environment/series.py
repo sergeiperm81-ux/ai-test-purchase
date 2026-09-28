@@ -986,8 +986,10 @@ def status(a):
     sid, folder = current_series()
     pl = jload(os.path.join(folder, "plan.json"))
     reg = registry(folder)
-    short = {"frozen": " ok ", "pending_review": " rv ", "pending_measurement": " nm ",
-             "analysis_failed": " an "}
+    short = {"frozen": " ok ", "partial": " pt ", "pending_review": " rv ",
+             "pending_measurement": " nm ", "analysis_failed": " an "}
+    stopped = {"limit_exceeded": " lim", "budget_exceeded": " bud", "model_drift": " drf",
+               "not_started": " ns "}
     print("series", sid, "| labels", " ".join(pl["labels"]), "| NeoMundi required:",
           (pl.get("neomundi") or {}).get("required"))
     print("day  date        " + "  ".join("%-4s" % l for l in pl["labels"]))
@@ -1000,12 +1002,15 @@ def status(a):
                 cells.append("  . ")
             elif last:
                 cells.append(short[last["status"]])
+            elif es[-1]["status"] in stopped:
+                cells.append(stopped[es[-1]["status"]])
             else:
                 cells.append(" x%d " % len(es))
         if any(c.strip() != "." for c in cells) or d["date"] <= datetime.date.today().isoformat():
             print("%3d  %s  %s" % (d["day"], d["date"], "  ".join(cells)))
-    print("ok = frozen, rv = pending review, nm = pending measurement, "
-          "an = analysis failed, xN = N technical failures")
+    print("ok = frozen, pt = partly confirmed, rv = pending review, nm = pending measurement, "
+          "an = analysis failed, lim = limit, bud = budget, drf = model drift, "
+          "ns = not started, xN = N technical failures")
 
 
 def analyse_cmd(a):
