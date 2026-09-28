@@ -184,10 +184,30 @@ class TestTechnicalRun(unittest.TestCase):
                         os.listdir(folder))
         shutil.rmtree(tmp, ignore_errors=True)
 
+    def test_a_rehearsal_of_one_configuration_has_ceilings_for_it_alone(self):
+        src = os.path.join(os.path.dirname(HERE), "models.json")
+        m = technical_run.technical_models(src, True, ["cohere/command-a-03-2025"],
+                                           {"cohere/command-a-03-2025": "2.66",
+                                            "openai/gpt-5.4-mini-2026-03-17": "0.60"})
+        self.assertEqual([x["configuration_id"] for x in m["models"]], ["cohere/command-a-03-2025"])
+        b = m["limits"]["budget"]
+        self.assertEqual(b["per_configuration_in_scope"],
+                         {"cohere/command-a-03-2025": {"USD": 2.66}, "openai/gpt-5.4-mini-2026-03-17": {"USD": 0.6}})
+        self.assertEqual(b["per_scope"], {"USD": 3.26})
+        self.assertEqual(b["per_utc_day"], {"USD": 3.26})
+        self.assertEqual((m["neomundi"]["max_observations_per_scope"], m["neomundi"]["max_contracts_per_scope"]), (60, 60))
+        with self.assertRaises(SystemExit):
+            technical_run.technical_models(src, True, ["no/such"])
+        with self.assertRaises(SystemExit):
+            technical_run.technical_models(src, True, None, {"cohere/command-a-03-2025": "1"})
+
     def test_the_agents_own_limit_is_an_outcome_and_a_spend_ceiling_is_not(self):
         import harness, call_log
-        self.assertEqual(harness.stop_of(call_log.LimitExceeded("the request of the agent is 9 bytes"))[1], 4)
+        self.assertEqual(harness.stop_of(call_log.AgentLimitExceeded("the request of the agent is 9 bytes"))[1], 4)
         self.assertEqual(harness.stop_of(call_log.ConfigurationCapExceeded("ceiling of x"))[1], 7)
+        # a setting the configuration lacks says nothing of the agent
+        self.assertEqual(harness.stop_of(call_log.LimitExceeded("model m has no max_output_tokens"))[1], 8)
+        self.assertEqual(series.NOT_COUNTED[series.HARNESS_STOPS[8]], "limit_exceeded")
         self.assertEqual(series.NOT_COUNTED[series.HARNESS_STOPS[4]], "stopped_by_agent_behaviour")
         self.assertEqual(series.NOT_COUNTED[series.HARNESS_STOPS[7]], "configuration_cap_exceeded")
         self.assertIn("stopped_by_agent_behaviour", series.COMPLETE)
@@ -202,7 +222,8 @@ class TestTechnicalRun(unittest.TestCase):
         entries = []
         for label, status, closure in (("A", "frozen", "completed"),
                                        ("C", "limit_exceeded", "limit_exceeded: the request of the agent is 279262 bytes; the limit is 250000: it is not sent"),
-                                       ("F", "limit_exceeded", "limit_exceeded: ceiling of cohere 3.5 USD")):
+                                       ("F", "limit_exceeded", "limit_exceeded: ceiling of cohere 3.5 USD"),
+                                       ("G", "limit_exceeded", "limit_exceeded: model m has no max_output_tokens in the configuration")):
             rid = "TP-D01-%s" % label
             os.makedirs(os.path.join(runs, rid))
             series.jdump(os.path.join(runs, rid, "run_manifest.json"), {"run_id": rid})
@@ -210,7 +231,12 @@ class TestTechnicalRun(unittest.TestCase):
             if status == "frozen":
                 series.jdump(os.path.join(runs, rid, "freeze_manifest.json"), {"run_id": rid})
             entries.append({"series": "TECH-X", "day": 1, "label": label, "run_id": rid, "status": status})
-        saved = (series.RUNS, series.registry, series.current_series, series.record)
+        series.jdump(os.path.join(folder, "plan.json"), {"counted": False})
+        series.jdump(os.path.join(folder, "model_key.json"),
+                     {"labels": {l: {"model": "m-" + l} for l in "ACFG"}})
+        saved = (series.RUNS, series.registry, series.current_series, series.record, series.run_manifest)
+        pinned = []
+        series.run_manifest = lambda *args: pinned.append(args) or {}
         written = []
         series.RUNS, series.registry = runs, (lambda f: entries + written)
         series.current_series = lambda: ("TECH-X", folder)
@@ -218,14 +244,18 @@ class TestTechnicalRun(unittest.TestCase):
         try:
             series.reclassify(types.SimpleNamespace(run="TP-D01-C", why="six unasked receipt requests"))
             self.assertEqual(written[-1]["status"], "stopped_by_agent_behaviour")
+            # its record is pinned: a run manifest is written for it, under the new status
+            self.assertEqual((pinned[-1][4], pinned[-1][5]), ("TP-D01-C", "stopped_by_agent_behaviour"))
             self.assertIn("six unasked receipt requests", written[-1]["note"])
             with self.assertRaises(SystemExit):     # a spend ceiling is not the agent's behaviour
                 series.reclassify(types.SimpleNamespace(run="TP-D01-F", why="x"))
+            with self.assertRaises(SystemExit):     # nor is a missing setting
+                series.reclassify(types.SimpleNamespace(run="TP-D01-G", why="x"))
             with self.assertRaises(SystemExit):     # a frozen purchase is not reclassified
                 series.reclassify(types.SimpleNamespace(run="TP-D01-A", why="x"))
             technical_run.rehearsal_anchor("TECH-X", folder, {"schedule": [{"day": 1}], "labels": ["A", "C"]})
         finally:
-            series.RUNS, series.registry, series.current_series, series.record = saved
+            series.RUNS, series.registry, series.current_series, series.record, series.run_manifest = saved
         self.assertTrue(os.path.exists(os.path.join(folder, "TECH-X.rehearsal.final.json")), os.listdir(folder))
         shutil.rmtree(tmp, ignore_errors=True)
 

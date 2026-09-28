@@ -228,6 +228,29 @@ class TestCallLog(RigCase):
         self.assertEqual(self.mock.to("/oa/"), [])
         self.assertEqual(self.calls(), [])
 
+    def test_only_the_agents_own_limits_are_its_behaviour(self):
+        rec = self.recorder()
+        c = providers.config_for("oa-model")
+        # a setting missing from the configuration is a plain limit, not the agent's behaviour
+        for broken in (dict(c, max_output_tokens=None), dict(c, rate_key="no:such-rate")):
+            with self.assertRaises(call_log.LimitExceeded) as e:
+                rec.begin("agent", broken)
+            self.assertNotIsInstance(e.exception, call_log.AgentLimitExceeded)
+        rec.limits = dict(rec.limits, max_request_bytes={"analyst": 10**6})
+        with self.assertRaises(call_log.LimitExceeded) as e:          # no size for the role
+            rec.reserve("RUN-T.C0001.A1", "agent", c, 10)
+        self.assertNotIsInstance(e.exception, call_log.AgentLimitExceeded)
+        # the analyst's oversized request is not the agent's doing; the agent's is
+        rec.limits = dict(rec.limits, max_request_bytes={"agent": 10, "analyst": 10})
+        with self.assertRaises(call_log.LimitExceeded) as e:
+            rec.reserve("RUN-T.C0001.A1", "analyst", c, 50)
+        self.assertNotIsInstance(e.exception, call_log.AgentLimitExceeded)
+        with self.assertRaises(call_log.AgentLimitExceeded):
+            rec.reserve("RUN-T.C0001.A1", "agent", c, 50)
+        rec.limits = dict(rec.limits, max_model_calls_per_purchase=0)
+        with self.assertRaises(call_log.AgentLimitExceeded):
+            rec.begin("agent", c)
+
     def test_a_request_over_its_size_limit_is_not_sent(self):
         rec = self.recorder()
         rec.limits = dict(rec.limits, max_request_bytes={"agent": 10, "analyst": 10})

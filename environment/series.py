@@ -80,11 +80,18 @@ COMPLETE = ("frozen", "partial", "pending_review", "pending_measurement", "analy
 PINNED = ("frozen", "partial")
 # closed for good: nothing more is expected of the purchase on that day
 CLOSED = PINNED + (STOPPED_BY_AGENT,)
-# exit codes of harness.py: 3 is retried; 4, 5, 6 and 7 are not; 5 and 6 stop the day
-HARNESS_STOPS = {3: "technical", 4: "agent", 5: "drift", 6: "budget", 7: "cap"}
+# exit codes of harness.py: 3 is retried; 4 to 8 are not; 5 and 6 stop the day.
+# 4 is the agent's own limit, 7 a configuration's spend ceiling, 8 a setting missing
+HARNESS_STOPS = {3: "technical", 4: "agent", 5: "drift", 6: "budget", 7: "cap", 8: "limit"}
 NOT_COUNTED = {"technical": "technical_failure", "agent": STOPPED_BY_AGENT,
                "drift": "model_drift", "budget": "budget_exceeded",
-               "cap": "configuration_cap_exceeded"}
+               "cap": "configuration_cap_exceeded", "limit": "limit_exceeded"}
+# the messages of the agent's own limits: a purchase recorded as limit_exceeded before these
+# had a class of their own is reclassified only when its closure is one of them
+AGENT_LIMIT_MESSAGES = ("limit_exceeded: the purchase reached its limit of",
+                        "limit_exceeded: the request of the agent is",
+                        "limit_exceeded: the agent asked for",
+                        "limit_exceeded: the response asks for")
 # exit codes of analyst.py: the analyst's own limits are not the agent's behaviour
 ANALYST_STOPS = {4: "limit_exceeded", 5: "model_drift", 6: "budget_exceeded"}
 LIMIT_KEYS = ("max_model_calls_per_purchase", "max_tool_rounds_per_turn",
@@ -484,8 +491,12 @@ def reclassify(a):
     if prior["status"] != "limit_exceeded":
         raise SystemExit("only a limit_exceeded purchase is reclassified; %s is %s" % (a.run, prior["status"]))
     closure = str((jload(os.path.join(RUNS, a.run, "manifest.json")).get("closure_reason")) or "")
-    if not closure.startswith("limit_exceeded:") or "ceiling of" in closure:
+    if not closure.startswith(AGENT_LIMIT_MESSAGES):
         raise SystemExit("the closure of %s is not a limit of the agent's behaviour: %s" % (a.run, closure[:200]))
+    pl = jload(os.path.join(folder, "plan.json"))
+    model = jload(os.path.join(folder, "model_key.json"))["labels"][prior["label"]]["model"]
+    run_manifest(sid, prior["day"], prior["label"], model, a.run, STOPPED_BY_AGENT, pl,
+                 prior.get("override"))
     record(folder, dict({k: prior.get(k) for k in ("series", "day", "date", "label", "attempt",
                                                    "run_id", "supersedes", "retry", "started_at",
                                                    "override")},
@@ -820,6 +831,9 @@ def attempt_purchase(folder, sid, pl, d, label, model, override, supersedes=None
              "attempt": attempt, "run_id": run_id, "supersedes": supersedes, "retry": retry,
              "started_at": started, "override": override}
     if kind != "complete":
+        if NOT_COUNTED[kind] == STOPPED_BY_AGENT and run_id:
+            # a result of the purchase: its record is pinned like any closed purchase
+            run_manifest(sid, d["day"], label, model, run_id, STOPPED_BY_AGENT, pl, override)
         record(folder, dict(entry, status=NOT_COUNTED[kind], note=note))
         print("     %s: %s" % (NOT_COUNTED[kind], note[:160]))
         return NOT_COUNTED[kind], run_id, note

@@ -13,6 +13,8 @@ checks a paid day must pass before its first call.
 
 Usage:
   python technical_run.py plan --start YYYY-MM-DD --seed N [--neomundi] [--window-utc HH:MM-HH:MM]
+                                [--only CONFIGURATION_ID ...] [--cap CONFIGURATION_ID=AMOUNT ...]
+                                [--note "why this rehearsal"]
   python technical_run.py day [--override "reason"] [--dry]
   python technical_run.py status
 """
@@ -46,16 +48,41 @@ REHEARSAL_NEOMUNDI_CAPS = {"max_observations_per_scope": 480, "max_observations_
                            "max_contracts_per_scope": 480, "max_contracts_per_purchase": 60}
 
 
-def technical_models(source, neomundi_enabled):
-    """The models file of the rehearsal: the environment file as it is, all eight tested
-    configurations and the analyst, with the rehearsal spend ceiling and NeoMundi caps."""
+def technical_models(source, neomundi_enabled, only=None, caps=None):
+    """The models file of the rehearsal: the environment file as it is, the tested
+    configurations (all eight, or those named in only) and the analyst, with the rehearsal
+    spend ceilings and NeoMundi caps. With only, each ceiling is the configuration's own
+    (or the one given in caps), the ceiling of the scope is their sum, and the NeoMundi caps
+    are those of that many purchases."""
     data = series.jload(source)
     out = dict(data)
-    out["neomundi"] = dict(data["neomundi"], enabled=bool(neomundi_enabled), **REHEARSAL_NEOMUNDI_CAPS)
+    per = {k: dict(v) for k, v in REHEARSAL_PER_CONFIGURATION.items()}
+    ceiling, nm_caps = dict(REHEARSAL_CEILING), dict(REHEARSAL_NEOMUNDI_CAPS)
+    if only:
+        known = {m["configuration_id"] for m in data["models"]}
+        unknown = sorted(set(only) - known)
+        if unknown:
+            raise SystemExit("not a tested configuration of the models file: %s" % ", ".join(unknown))
+        out["models"] = [m for m in data["models"] if m["configuration_id"] in only]
+        kept = set(only) | {m["configuration_id"] for m in data.get("auxiliary_models", [])}
+        per = {k: v for k, v in per.items() if k in kept}
+        for cid, amount in (caps or {}).items():
+            if cid not in per:
+                raise SystemExit("a ceiling for %s, which is not in this rehearsal" % cid)
+            per[cid] = {next(iter(per[cid])): float(amount)}
+        ceiling = {}
+        for v in per.values():
+            for cur, amount in v.items():
+                ceiling[cur] = round(ceiling.get(cur, 0.0) + amount, 6)
+        n = len(out["models"])
+        nm_caps = {"max_observations_per_scope": 60 * n, "max_observations_per_purchase": 60,
+                   "max_contracts_per_scope": 60 * n, "max_contracts_per_purchase": 60}
+    elif caps:
+        raise SystemExit("--cap is given only with --only")
+    out["neomundi"] = dict(data["neomundi"], enabled=bool(neomundi_enabled), **nm_caps)
     out["limits"] = dict(data["limits"], budget=dict(
-        data["limits"]["budget"], per_scope=dict(REHEARSAL_CEILING),
-        per_utc_day=dict(REHEARSAL_CEILING),
-        per_configuration_in_scope={k: dict(v) for k, v in REHEARSAL_PER_CONFIGURATION.items()}))
+        data["limits"]["budget"], per_scope=dict(ceiling), per_utc_day=dict(ceiling),
+        per_configuration_in_scope=per))
     out["version"] = data.get("version", "") + " | technical rehearsal derivation"
     out["technical_rehearsal"] = {"rounds": REHEARSAL_DAYS,
                                   "purchases_per_round": len(data["models"]),
@@ -72,11 +99,15 @@ def ledger_env(sid):
 def plan(a):
     source = getattr(a, "models", None) or os.path.join(BASE, "models.json")
     derived = os.path.join(series.SERIES, "technical-models-%s.json" % a.start)
-    series.jdump(derived, technical_models(source, a.neomundi))
+    caps = dict(c.split("=", 1) for c in (getattr(a, "cap", None) or []))
+    series.jdump(derived, technical_models(source, a.neomundi, getattr(a, "only", None), caps))
     ns = types.SimpleNamespace(start=a.start, days=REHEARSAL_DAYS, seed=a.seed, models=derived,
                                window_utc=a.window_utc, technical=True)
     series.plan(ns)
     sid, folder = series.current_series()
+    if getattr(a, "note", None):
+        with open(os.path.join(folder, "DIAGNOSTIC.md"), "a", encoding="utf-8", newline="") as f:
+            f.write("\nWhy this rehearsal: %s\n" % a.note)
     print("technical rehearsal:", sid, "| one round of %d purchases"
           % len(series.jload(derived)["models"]))
 
@@ -164,6 +195,9 @@ def main():
     p.add_argument("--neomundi", action="store_true", help="observations on in the rehearsal")
     p.add_argument("--window-utc", default="12:00-16:00")
     p.add_argument("--models", default=None, help="default: the environment models.json")
+    p.add_argument("--only", action="append", help="a tested configuration_id; repeat for more")
+    p.add_argument("--cap", action="append", help="CONFIGURATION_ID=AMOUNT, with --only")
+    p.add_argument("--note", help="why this rehearsal; written into DIAGNOSTIC.md")
     p.set_defaults(fn=plan)
     p = sub.add_parser("day")
     p.add_argument("--override"); p.add_argument("--dry", action="store_true"); p.set_defaults(fn=day)

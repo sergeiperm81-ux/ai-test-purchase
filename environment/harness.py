@@ -35,12 +35,15 @@ import neomundi_client
 import confirm
 
 # how a purchase that stops on an exception ends: the closure written in the manifest and
-# the exit code series.py reads (3 is retried; 4, 5, 6 and 7 are not, and 5 and 6 stop the
-# day). 4 is a limit the agent's own behaviour reached (calls, tools, operations, the size of
-# the request its tool calls built up); 7 is the spend ceiling of the configuration
+# the exit code series.py reads (3 is retried; 4 to 8 are not, and 5 and 6 stop the day).
+# 4 is a limit the agent's own behaviour reached (calls, tools, operations, the size of the
+# request its conversation and tool calls built up); 7 is the spend ceiling of the
+# configuration; 8 is any other limit: a setting the configuration lacks (no output limit,
+# no rate, no request size for the role, no confirmation), which says nothing of the agent
 STOPS = ((call_log.BudgetExceeded, "budget_exceeded", 6),
          (call_log.ConfigurationCapExceeded, "configuration_cap_exceeded", 7),
-         (call_log.LimitExceeded, "limit_exceeded", 4),
+         (call_log.AgentLimitExceeded, "stopped_by_agent_behaviour", 4),
+         (call_log.LimitExceeded, "limit_exceeded", 8),
          (call_log.ModelDrift, "model_drift", 5),
          (call_log.ProviderCallFailed, "technical_failure", 3))
 STOP_ERRORS = tuple(s[0] for s in STOPS)
@@ -294,12 +297,12 @@ def agent_turn(run, model, history, user_text, transcript, api_log):
                                 ("max_tool_calls_per_turn", turn_calls, "operations in one turn")):
             cap = lim.get(key)
             if cap is not None and used > cap:
-                raise call_log.LimitExceeded("the agent asked for %d %s; the limit is %d"
+                raise call_log.AgentLimitExceeded("the agent asked for %d %s; the limit is %d"
                                              % (used, what, cap))
         material = sum(1 for c in calls if c["function"]["name"] in MATERIAL_OPS)
         cap = lim.get("max_material_operations_per_purchase")
         if cap is not None and MATERIAL["n"] + material > cap:
-            raise call_log.LimitExceeded("the response asks for %d material operation(s) after %d; "
+            raise call_log.AgentLimitExceeded("the response asks for %d material operation(s) after %d; "
                                          "the limit of the purchase is %d"
                                          % (material, MATERIAL["n"], cap))
         MATERIAL["n"] += material

@@ -40,6 +40,12 @@ class LimitExceeded(Exception):
     """A hard limit of the configuration was reached. Not a technical failure: no retry."""
 
 
+class AgentLimitExceeded(LimitExceeded):
+    """A limit the service agent's own behaviour reached: its model calls in the purchase,
+    its operations, or a request its own conversation and tool calls built up. Only these
+    are an outcome of the purchase; a missing setting of the configuration is not."""
+
+
 class BudgetExceeded(LimitExceeded):
     """The spend ceiling would be passed by the next attempt."""
 
@@ -214,7 +220,7 @@ class Recorder:
         if role == "agent" and cap is not None:
             agent_ops = {a["operation_id"] for a in known if a.get("role") == "agent"}
             if len(agent_ops) >= cap:
-                raise LimitExceeded("the purchase reached its limit of %d model calls" % cap)
+                raise AgentLimitExceeded("the purchase reached its limit of %d model calls" % cap)
         if not cfg.get("max_output_tokens"):
             raise LimitExceeded("model %s has no max_output_tokens in the configuration: an "
                                 "unbounded call is not made" % cfg["model"])
@@ -241,8 +247,10 @@ class Recorder:
             if cap is None:
                 raise LimitExceeded("no max_request_bytes for the role %s: the request is not sent" % role)
             if request_len > cap:
-                raise LimitExceeded("the request of the %s is %d bytes; the limit is %d: it is "
-                                    "not sent" % (role, request_len, cap))
+                # only the agent's request is its own doing; the analyst's is not
+                cls = AgentLimitExceeded if role == "agent" else LimitExceeded
+                raise cls("the request of the %s is %d bytes; the limit is %d: it is "
+                          "not sent" % (role, request_len, cap))
         bound = usage.upper_bound(cfg["rate_key"], request_len, cfg["max_output_tokens"])
         caps, cur = self.caps(), bound["currency"]
         with LedgerLock():
