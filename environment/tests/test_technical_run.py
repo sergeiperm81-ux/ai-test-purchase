@@ -259,6 +259,21 @@ class TestTechnicalRun(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(folder, "TECH-X.rehearsal.final.json")), os.listdir(folder))
         shutil.rmtree(tmp, ignore_errors=True)
 
+    def test_a_dry_run_before_the_start_shows_the_next_day_and_a_real_one_refuses(self):
+        import io, contextlib
+        tomorrow = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
+        technical_run.plan(self.ns(start=tomorrow, seed=7, neomundi=False, window_utc="00:00-23:59",
+                                   models=self.models))
+        sid, folder = series.current_series()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            series.day(self.ns(day=None, date=None, only=None, dry=True, override=None))
+        self.assertIn("day 01 runs on %s" % tomorrow, out.getvalue())
+        self.assertIn("(dry run, nothing executed)", out.getvalue())
+        self.assertEqual(series.registry(folder), [])                  # nothing recorded
+        with self.assertRaises(SystemExit):                            # a real day waits for its date
+            series.day(self.ns(day=None, date=None, only=None, dry=False, override=None))
+
     def test_one_round_of_eight(self):
         sid, folder = self.ready()
         self.assertTrue(sid.startswith("TECH-"))

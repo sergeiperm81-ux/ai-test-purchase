@@ -890,9 +890,17 @@ def day(a):
     else:
         date = a.date or datetime.date.today().isoformat()
         d = next((x for x in pl["schedule"] if x["date"] == date), None)
+        if not d and a.dry and not a.date:
+            # a dry run before the series starts shows the next day of the plan, as it will
+            # run on its own date; nothing is executed and nothing is recorded
+            d = next((x for x in pl["schedule"] if x["date"] > date), None)
     if not d:
         raise SystemExit("no such day in the plan")
-    override = date_override(d, a.override)
+    if a.dry and d["date"] != datetime.date.today().isoformat():
+        print("dry run before the date of the day: day %02d runs on %s" % (d["day"], d["date"]))
+        override = None
+    else:
+        override = date_override(d, a.override)
     if not a.dry:
         preflight(folder, pl)
     only = set(a.only.split(",")) if a.only else None

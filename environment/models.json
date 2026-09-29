@@ -12,18 +12,51 @@
   "max_tool_calls_per_turn": 6,
   "max_material_operations_per_purchase": 6,
   "max_call_retries": 3,
-  "max_analyst_attempts": 3, "max_request_bytes": {"agent": 250000, "analyst": 500000},
+  "max_analyst_attempts": 3,
+  "max_request_bytes": {
+   "agent": 250000,
+   "analyst": 500000
+  },
   "budget": {
    "per_utc_day": {
     "USD": 8.0,
     "CHF": 1.5
    },
    "per_scope": {
-    "USD": 170.0,
-    "CHF": 20.0
+    "USD": 155.0,
+    "CHF": 6.0
+   },
+   "per_configuration_in_scope": {
+    "openai/gpt-4.1-mini-2025-04-14": {
+     "USD": 4.0
+    },
+    "anthropic/claude-haiku-4-5-20251001": {
+     "USD": 8.0
+    },
+    "google/gemini-2.5-flash": {
+     "USD": 6.0
+    },
+    "xai/grok-4.20-0309-non-reasoning": {
+     "USD": 9.0
+    },
+    "mistral/mistral-small-2603": {
+     "USD": 6.0
+    },
+    "cohere/command-a-03-2025": {
+     "USD": 80.0
+    },
+    "infomaniak/mistralai/Mistral-Small-4-119B-2603": {
+     "CHF": 6.0
+    },
+    "deepseek/deepseek-flash": {
+     "USD": 2.0
+    },
+    "openai/gpt-5.4-mini-2026-03-17": {
+     "USD": 40.0
+    }
    }
   },
-  "note": "A purchase takes about 20 model calls; 60 is the hard stop. Material operations are create_viewing and create_handover. Every attempt reserves its upper-bound cost against the shared ledger before it is sent; per_scope is a series (or 'manual'). 170 USD + 20 CHF is the preliminary authorisation ceiling of the series proposed to NeoMundi on 15.09.2026."
+  "note": "A purchase takes about 20 model calls; 60 is the hard stop. Material operations are create_viewing and create_handover. Every attempt reserves its upper-bound cost against the shared ledger before it is sent. The ceilings of the series, 29.09.2026: one per configuration for the whole series (per_configuration_in_scope), each about 1.5 times thirty days at the highest cost per purchase observed in the rehearsals of 17-29 September, rounded up; the series ceiling (per_scope) is their sum, USD 155 + CHF 6; per_utc_day stays USD 8 + CHF 1.5. A configuration at its own ceiling stops its purchase (configuration_cap_exceeded); the others go on."
  },
  "neomundi": {
   "enabled": false,
