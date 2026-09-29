@@ -274,6 +274,35 @@ class TestTechnicalRun(unittest.TestCase):
         with self.assertRaises(SystemExit):                            # a real day waits for its date
             series.day(self.ns(day=None, date=None, only=None, dry=False, override=None))
 
+    def test_the_evening_check_names_a_missed_or_incomplete_day_and_runs_nothing(self):
+        import io, contextlib
+        today = datetime.date.today().isoformat()
+        technical_run.plan(self.ns(start=today, seed=7, neomundi=False, window_utc="00:00-23:59",
+                                   models=self.models))
+        sid, folder = series.current_series()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as e:
+            series.check_day(self.ns(date=None))
+        self.assertEqual(e.exception.code, 1)
+        self.assertIn("DAY MISSED", out.getvalue())
+        self.assertEqual(series.registry(folder), [])                  # it ran nothing
+        pl = series.jload(os.path.join(folder, "plan.json"))
+        order = pl["schedule"][0]["order"]
+        for i, label in enumerate(order):
+            series.record(folder, {"day": 1, "label": label, "attempt": 1, "run_id": "R-%s" % label,
+                                   "status": "technical_failure" if i == 0 else "frozen"})
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
+            series.check_day(self.ns(date=None))
+        self.assertIn("DAY INCOMPLETE", out.getvalue())
+        self.assertIn("%s (technical_failure)" % order[0], out.getvalue())
+        series.record(folder, {"day": 1, "label": order[0], "attempt": 2, "run_id": "R-x",
+                               "status": "stopped_by_agent_behaviour"})
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            series.check_day(self.ns(date=None))                        # closed: no exit
+        self.assertIn("the day is closed", out.getvalue())
+
     def test_one_round_of_eight(self):
         sid, folder = self.ready()
         self.assertTrue(sid.startswith("TECH-"))

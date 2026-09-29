@@ -1,18 +1,24 @@
 {
- "recorded_at_utc": "2026-09-17T05:34:32Z",
- "python": "3.12.10",
+ "python": "3.12.14",
  "implementation": "CPython",
- "os": "Windows",
- "os_version": "10.0.19045",
- "architecture": "AMD64",
+ "os": "Linux",
+ "os_release": "Ubuntu 24.04",
+ "architecture": "x86_64",
  "packages": {
   "jsonschema": "4.26.0",
-  "pytest": "9.0.2",
-  "tzdata": "2025.3",
+  "pytest": "9.1.1",
+  "tzdata": "2026.4",
   "attrs": "26.1.0",
+  "iniconfig": "2.3.0",
+  "jsonschema-specifications": "2025.9.1",
+  "packaging": "26.3",
+  "pluggy": "1.6.0",
+  "pygments": "2.21.0",
   "referencing": "0.37.0",
-  "rpds-py": "0.30.0",
-  "jsonschema-specifications": "2025.9.1"
+  "rpds-py": "2026.6.3",
+  "typing-extensions": "4.16.0"
  },
- "note": "the runtime the series is frozen under; requirements.txt gives lower bounds, this file the exact versions"
+ "recorded_at_utc": "2026-09-29T17:55:00Z",
+ "recorded_on": "the GitHub runner of the series, ubuntu-24.04 image, job 36605699523",
+ "note": "the runtime the series is frozen under, read on the machine that runs it; every day compares the machine with this file and refuses a difference"
 }

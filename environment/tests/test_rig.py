@@ -251,6 +251,31 @@ class TestCallLog(RigCase):
         with self.assertRaises(call_log.AgentLimitExceeded):
             rec.begin("agent", c)
 
+    def test_a_day_refuses_a_machine_that_is_not_the_pinned_runtime(self):
+        import runtime, series
+        now = runtime.current()
+        self.assertEqual(runtime.differences(now, now), [])
+        other = json.loads(json.dumps(now))
+        other["python"] = "3.12.0"
+        first = sorted(other["packages"])[0]
+        other["packages"][first] = "0.0.1"
+        diff = runtime.differences(other, now)
+        self.assertEqual(len(diff), 2)
+        self.assertTrue(any(d.startswith("package %s" % first) for d in diff))
+        p = os.path.join(self.tmp, "pinned-runtime.json")
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(other, f)
+        saved = os.environ["TEST_PURCHASE_RUNTIME_FILE"]
+        os.environ["TEST_PURCHASE_RUNTIME_FILE"] = p
+        try:
+            with self.assertRaises(SystemExit) as e:
+                series.verify_runtime()
+            self.assertIn("not the runtime pinned by the plan", str(e.exception))
+        finally:
+            os.environ["TEST_PURCHASE_RUNTIME_FILE"] = saved
+        series.verify_runtime()                       # the machine's own runtime passes
+        self.assertIn("requirements.txt", series.code_versions())   # the pins are in the plan
+
     def test_a_request_over_its_size_limit_is_not_sent(self):
         rec = self.recorder()
         rec.limits = dict(rec.limits, max_request_bytes={"agent": 10, "analyst": 10})

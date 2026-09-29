@@ -1,0 +1,15 @@
+# Exact versions, as installed and tested on the GitHub runner (Python 3.12) on 29.09.2026,
+# direct dependencies and everything they pull in. A change of any line is a change of the
+# stand and is made before a plan, never during a series.
+jsonschema==4.26.0
+pytest==9.1.1
+tzdata==2026.4
+attrs==26.1.0
+iniconfig==2.3.0
+jsonschema-specifications==2025.9.1
+packaging==26.3
+pluggy==1.6.0
+pygments==2.21.0
+referencing==0.37.0
+rpds-py==2026.6.3
+typing-extensions==4.16.0

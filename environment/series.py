@@ -137,7 +137,7 @@ def code_versions():
     """The checksum of every script and rules file of the environment: the code a series
     ran under is part of what the plan pins."""
     out = {}
-    for pattern in ("*.py", "*.json", "worksheet.txt"):
+    for pattern in ("*.py", "*.json", "worksheet.txt", "requirements.txt"):
         for p in sorted(glob.glob(os.path.join(BASE, pattern))):
             if os.path.basename(p) == "models.json":
                 continue
@@ -150,7 +150,7 @@ def snapshot_code(folder):
     target = os.path.join(folder, "code-at-start")
     os.makedirs(target, exist_ok=False)
     out = {}
-    for pattern in ("*.py", "*.json", "worksheet.txt"):
+    for pattern in ("*.py", "*.json", "worksheet.txt", "requirements.txt"):
         for source in sorted(glob.glob(os.path.join(BASE, pattern))):
             name = os.path.basename(source)
             if name == "models.json":
@@ -477,6 +477,40 @@ def record(folder, entry):
     entry["recorded_at"] = now()
     with open(registry_path(folder), "a", encoding="utf-8", newline="") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def check_day(a):
+    """The free evening check of a day: did every label of today's day get a closed purchase?
+    Nothing is sent and nothing is run. A day with a label missing or not closed exits 1, so
+    that the job fails and GitHub notifies the owner. The decision on a manual run belongs to
+    the owner: within the window of the same day, a manual dispatch of the round; after it,
+    only with the owner's approval and a recorded --override. Nothing catches up by itself."""
+    sid, folder = current_series()
+    pl = jload(os.path.join(folder, "plan.json"))
+    date = a.date or datetime.date.today().isoformat()
+    d = next((x for x in pl["schedule"] if x["date"] == date), None)
+    if not d:
+        print("series %s: no day planned on %s" % (sid, date))
+        return
+    reg = [e for e in registry(folder) if e["day"] == d["day"]]
+    missing, open_ = [], []
+    for label in d["order"]:
+        es = [e for e in reg if e["label"] == label]
+        if not es:
+            missing.append(label)
+        elif not any(e["status"] in CLOSED for e in es):
+            open_.append("%s (%s)" % (label, es[-1]["status"]))
+    print("series %s, day %02d (%s): %d of %d labels closed"
+          % (sid, d["day"], d["date"], len(d["order"]) - len(missing) - len(open_), len(d["order"])))
+    if not reg:
+        print("DAY MISSED: no purchase of this day was attempted. The owner decides on a "
+              "manual run; nothing catches up by itself.")
+        sys.exit(1)
+    if missing or open_:
+        print("DAY INCOMPLETE: without an attempt %s; not closed %s. The owner decides."
+              % (", ".join(missing) or "none", ", ".join(open_) or "none"))
+        sys.exit(1)
+    print("the day is closed")
 
 
 def reclassify(a):
@@ -879,10 +913,22 @@ def retry(a):
     day_anchor(sid, folder, pl, d)
 
 
+def verify_runtime():
+    """The machine a day runs on is the runtime the plan pinned (runtime_versions.json, pinned
+    with the code): the interpreter, the operating system and every package at its exact
+    version. A difference stops the day before anything is sent, dry or paid."""
+    import runtime
+    diff = runtime.check()
+    if diff:
+        raise SystemExit("this machine is not the runtime pinned by the plan: %s. The day is not "
+                         "run; a changed runtime is a new plan" % "; ".join(diff))
+
+
 def day(a):
     sid, folder = current_series()
     pl = jload(os.path.join(folder, "plan.json"))
     verify_plan_code(pl)
+    verify_runtime()
     verify_model_configuration(folder, pl)
     key = jload(os.path.join(folder, "model_key.json"))["labels"]
     if a.day:
@@ -1132,6 +1178,7 @@ def main():
     p.add_argument("--approved-by", required=True)
     p.add_argument("--approved-estimate", required=True)
     p.add_argument("--override"); p.set_defaults(fn=retry)
+    p = sub.add_parser("check-day"); p.add_argument("--date"); p.set_defaults(fn=check_day)
     p = sub.add_parser("reclassify"); p.add_argument("--run", required=True)
     p.add_argument("--why", required=True); p.set_defaults(fn=reclassify)
     p = sub.add_parser("analyse"); p.add_argument("--run", required=True)
