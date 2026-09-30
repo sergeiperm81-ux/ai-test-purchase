@@ -1259,7 +1259,8 @@ class TestEndToEnd(RigCase):
                                                usage={"prompt_tokens": 2000, "completion_tokens": 30})))
         self.mock.route("/nm/v1/govern", ok({"request_id": "nm", "mode": "OBS",
                                              "governance": {"decision": "ALLOW"},
-                                             "audit": {"trace_id": "trace-nm"}}))
+                                             "audit": {"trace_id": "trace-nm", "measurement_version": "3.0.0",
+                                                       "normalizer_version": "1.0.0"}}))
         self.mock.route("/nm/v1/rgc/contracts/", ok(TestNeoMundi.signed_contract("nm")))
         env = dict(os.environ, TEST_PURCHASE_MODELS_FILE=models,
                    TEST_PURCHASE_PURCHASE_ID="S-TEST.D01-A", TEST_PURCHASE_DAY_ID="D01",
@@ -1298,6 +1299,15 @@ class TestEndToEnd(RigCase):
         good, d = series.measurement(run_dir, {"neomundi": strict})
         self.assertTrue(good, d)
         self.assertTrue(d["files"] and all(f.startswith("neomundi/responses/") for f in d["files"]))
+        # the version of the instrument the plan pins: the same one passes, another one waits
+        same = dict(declared, measurement_version={"measurement_version": "3.0.0", "normalizer_version": "1.0.0"})
+        good, d = series.measurement(run_dir, {"neomundi": same})
+        self.assertTrue(good, d)
+        self.assertEqual(d["measurement_version"]["measurement_version"], "3.0.0")
+        newer = dict(declared, measurement_version={"measurement_version": "3.1.0"})
+        bad, d = series.measurement(run_dir, {"neomundi": newer})
+        self.assertFalse(bad)
+        self.assertIn("measured under {'measurement_version': '3.0.0'}; the plan pins", d["why"])
         wrong_schema = {"type": "object", "required": ["not_in_any_response"]}
         bad, d = series.measurement(run_dir, {"neomundi": dict(declared, schema=wrong_schema,
                                                                schema_object_sha256=series.sha256_obj(wrong_schema))})

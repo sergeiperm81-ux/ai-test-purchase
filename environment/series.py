@@ -446,6 +446,11 @@ def neomundi(a):
                        "schema_object_sha256": sha256_obj(schema),
                        "schema": schema,
                       "required_keys": [k for k in (a.required_keys or "").split(",") if k],
+                      # the version of the measurement instrument NeoMundi froze, as every
+                      # response must report it in audit; None where none was declared
+                      "measurement_version": {k: v for k, v in (
+                          ("measurement_version", a.measurement_version),
+                          ("normalizer_version", a.normalizer_version)) if v} or None,
                       "declared_at": now(),
                       "note": "a run whose neomundi/ folder holds no valid measurement "
                               "file is not frozen: pending_measurement"}
@@ -629,7 +634,18 @@ def measurement(run_dir, pl):
             return False, {"required": True,
                            "why": "%s fails the declared schema at %s: %s"
                                   % (os.path.basename(f), where, e.message[:180])}
+        # every response is measured by the version the plan pinned; a response under
+        # another one is not mixed in, and the purchase waits for its measurement
+        pinned = req.get("measurement_version") or {}
+        audit = data.get("audit") if isinstance(data.get("audit"), dict) else {}
+        other = {k: audit.get(k) for k, v in pinned.items() if audit.get(k) != v}
+        if other:
+            return False, {"required": True,
+                           "why": "%s was measured under %s; the plan pins %s"
+                                  % (os.path.basename(f), other, pinned)}
         out["files"][os.path.relpath(f, run_dir).replace(os.sep, "/")] = sha256_file(f)
+    if req.get("measurement_version"):
+        out["measurement_version"] = req["measurement_version"]
     out["completed_calls"] = link_detail["completed_calls"]
     out["observed"] = link_detail["observed"]
     return True, out
@@ -1161,6 +1177,9 @@ def main():
     p.set_defaults(fn=plan)
     p = sub.add_parser("neomundi"); p.add_argument("--version", required=True)
     p.add_argument("--schema", required=True); p.add_argument("--required-keys")
+    p.add_argument("--measurement-version", help="the frozen audit.measurement_version NeoMundi "
+                   "gives; every response must report it")
+    p.add_argument("--normalizer-version", help="the frozen audit.normalizer_version, if given")
     # the base URL is required: a declaration must not adopt a value silently
     p.add_argument("--base-url", required=True, help="the base URL NeoMundi confirmed")
     p.add_argument("--observe-path", default="/v1/govern")
