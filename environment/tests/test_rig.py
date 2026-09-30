@@ -1186,6 +1186,11 @@ class TestFinalPatch(RigCase):
         pl = {"neomundi": {"required": True, "config_file": "neomundi-config.json",
                            "config_sha256": series.sha256_file(path), "schema": {"type": "object"},
                            "schema_object_sha256": series.sha256_obj({"type": "object"})}}
+        # a counted series without the version of the instrument pinned is not ready; a
+        # rehearsal (counted: false) does not need it
+        self.assertIn("pins no version of the measurement instrument", " ".join(series.neomundi_ready(self.tmp, pl)))
+        self.assertEqual(series.neomundi_ready(self.tmp, dict(pl, counted=False)), [])
+        pl["neomundi"]["measurement_version"] = {"measurement_version": "3.0.0"}
         self.assertEqual(series.neomundi_ready(self.tmp, pl), [])
         os.environ["TEST_PURCHASE_NEOMUNDI_CONFIG"] = path
         self.assertTrue(neomundi_client.freeze_config(self.run_dir)["enabled"])

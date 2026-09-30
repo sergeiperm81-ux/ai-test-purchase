@@ -829,9 +829,11 @@ def neomundi_config_problems(cfg):
     return problems
 
 
-def neomundi_ready(folder, pl):
+def neomundi_ready(folder, pl, keys=True):
     """[] when the plan does not require the measurement, or when the declared configuration
-    is intact, enabled, complete, has its key and its schema; the problems otherwise."""
+    is intact, enabled, complete, has its key (unless keys is False, for a dry run) and its
+    schema, and, in a counted series, pins the version of the measurement instrument; the
+    problems otherwise."""
     req = pl.get("neomundi") or {}
     if not req.get("required"):
         return []
@@ -842,8 +844,13 @@ def neomundi_ready(folder, pl):
         return ["the NeoMundi configuration no longer matches the checksum declared in the plan"]
     cfg = jload(path)
     problems = neomundi_config_problems(cfg)
-    if not providers.key_present(cfg.get("key_env") or ""):
+    if keys and not providers.key_present(cfg.get("key_env") or ""):
         problems.append("%s is absent" % cfg.get("key_env"))
+    # a counted series is measured by one frozen version of the instrument: without it pinned
+    # the check of every response has nothing to compare with, and a change would pass unseen
+    if pl.get("counted", True) and not (req.get("measurement_version") or {}).get("measurement_version"):
+        problems.append("the plan pins no version of the measurement instrument: declare it with "
+                        "series.py neomundi --measurement-version, as NeoMundi froze it")
     schema = req.get("schema")
     if not isinstance(schema, dict) or sha256_obj(schema) != req.get("schema_object_sha256"):
         problems.append("the declared NeoMundi schema is not intact")
@@ -958,6 +965,11 @@ def day(a):
             d = next((x for x in pl["schedule"] if x["date"] > date), None)
     if not d:
         raise SystemExit("no such day in the plan")
+    if a.dry:
+        # what the paid day would refuse on the plan itself (the keys are checked apart)
+        problems = neomundi_ready(folder, pl, keys=False)
+        if problems:
+            raise SystemExit("NOT READY, the day would stop before any purchase: " + "; ".join(problems))
     if a.dry and d["date"] != datetime.date.today().isoformat():
         print("dry run before the date of the day: day %02d runs on %s" % (d["day"], d["date"]))
         override = None
