@@ -65,7 +65,11 @@ ANCHORS = os.path.normpath(os.path.join(BASE, "..", "Frozen results", "series"))
 PY = sys.executable
 
 LABELS = "ABCDEFGHIJKL"
-STOP_DAY = ("budget_exceeded", "model_drift")
+# a NeoMundi response under another version of the instrument than the plan pins stops the
+# day, as a change of the served model does, and blocks the next days until the owner decides
+VERSION_CHANGED = "measurement_version_changed"
+VERSION_STOP_FILE = "neomundi_version_stop.json"
+STOP_DAY = ("budget_exceeded", "model_drift", VERSION_CHANGED)
 # "partial": the record of the purchase is frozen and its score is confirmed in some of the
 # twelve positions only; the others are null with their reasons. It is complete; its null
 # positions are not counted in any mean, and it has no sum and no index
@@ -640,7 +644,8 @@ def measurement(run_dir, pl):
         audit = data.get("audit") if isinstance(data.get("audit"), dict) else {}
         other = {k: audit.get(k) for k, v in pinned.items() if audit.get(k) != v}
         if other:
-            return False, {"required": True,
+            return False, {"required": True, "version_mismatch": {"reported": other, "pinned": pinned,
+                                                                  "file": os.path.basename(f)},
                            "why": "%s was measured under %s; the plan pins %s"
                                   % (os.path.basename(f), other, pinned)}
         out["files"][os.path.relpath(f, run_dir).replace(os.sep, "/")] = sha256_file(f)
@@ -676,6 +681,13 @@ def analyse(run_id, pl, run_analyst=True):
     # did not arrive cannot be frozen, and an analysis of it would be money spent on a
     # purchase that waits anyway. The cost of what was spent is written all the same
     ok, detail = measurement(run_dir, pl)
+    if not ok and detail.get("version_mismatch"):
+        # the instrument changed under the series: stop here, before the analyst is paid, and
+        # stop the series until the owner decides; the purchase keeps its record
+        notes.append("measurement: " + detail.get("why", "version changed"))
+        run_cmd(["cost.py", run_dir])
+        version_stop(os.path.join(SERIES, pl["series"]), run_id, detail["version_mismatch"])
+        return VERSION_CHANGED, notes
     if not ok:
         notes.append("measurement: " + detail.get("why", "missing"))
         run_cmd(["cost.py", run_dir])
@@ -829,12 +841,43 @@ def neomundi_config_problems(cfg):
     return problems
 
 
+def version_stop(folder, run_id, mismatch):
+    """Records that NeoMundi answered under another version than the plan pins. While the
+    record stands, no day of the series runs."""
+    p = os.path.join(folder, VERSION_STOP_FILE)
+    if not os.path.exists(p):
+        jdump(p, {"at": now(), "run_id": run_id, **mismatch,
+                  "what_this_means": "NeoMundi measured under another version than the plan pins. "
+                                     "No further day runs until the owner decides; series.py "
+                                     "version-clear records the decision"})
+
+
+def version_clear(a):
+    """The owner's decision after a change of version: the stop record is moved into the
+    series log with the reason, and the days may run again. A new version is a new plan."""
+    sid, folder = current_series()
+    p = os.path.join(folder, VERSION_STOP_FILE)
+    if not os.path.exists(p):
+        raise SystemExit("no version stop in series %s" % sid)
+    entry = dict(jload(p), cleared_at=now(), cleared_because=a.why)
+    with open(os.path.join(folder, "neomundi_version_stops.jsonl"), "a", encoding="utf-8", newline="") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    os.remove(p)
+    print("version stop cleared in %s: %s" % (sid, a.why))
+
+
 def neomundi_ready(folder, pl, keys=True):
     """[] when the plan does not require the measurement, or when the declared configuration
     is intact, enabled, complete, has its key (unless keys is False, for a dry run) and its
     schema, and, in a counted series, pins the version of the measurement instrument; the
     problems otherwise."""
     req = pl.get("neomundi") or {}
+    stop = os.path.join(folder, VERSION_STOP_FILE)
+    if os.path.exists(stop):
+        st = jload(stop)
+        return ["NeoMundi answered under another version (%s; the plan pins %s) in %s: the series "
+                "is stopped until the owner decides (series.py version-clear)"
+                % (st.get("reported"), st.get("pinned"), st.get("run_id"))]
     if not req.get("required"):
         return []
     path = os.path.join(folder, req.get("config_file") or "neomundi-config.json")
@@ -1210,6 +1253,8 @@ def main():
     p.add_argument("--approved-estimate", required=True)
     p.add_argument("--override"); p.set_defaults(fn=retry)
     p = sub.add_parser("check-day"); p.add_argument("--date"); p.set_defaults(fn=check_day)
+    p = sub.add_parser("version-clear"); p.add_argument("--why", required=True)
+    p.set_defaults(fn=version_clear)
     p = sub.add_parser("reclassify"); p.add_argument("--run", required=True)
     p.add_argument("--why", required=True); p.set_defaults(fn=reclassify)
     p = sub.add_parser("analyse"); p.add_argument("--run", required=True)

@@ -303,6 +303,39 @@ class TestTechnicalRun(unittest.TestCase):
             series.check_day(self.ns(date=None))                        # closed: no exit
         self.assertIn("the day is closed", out.getvalue())
 
+    def test_a_change_of_the_measurement_version_stops_the_day_and_the_next_days(self):
+        # the second purchase comes back measured under another version than the plan pins:
+        # it is not analysed, the six after it are not started, and no day runs again until
+        # the owner clears the stop with a reason
+        sid, folder = self.ready()
+        real = series.measurement
+        def measured(run_dir, pl):
+            if run_dir.endswith("-0002"):
+                return False, {"required": True, "why": "measured under 3.2.0; the plan pins 3.1.0",
+                               "version_mismatch": {"reported": {"measurement_version": "3.2.0"},
+                                                    "pinned": {"measurement_version": "3.1.0"}, "file": "x.json"}}
+            return True, {"required": True}
+        series.measurement = measured
+        try:
+            technical_run.day(self.ns(override=None, dry=False))
+            self.assertEqual(len(self.harness_tags()), 2)
+            changed = [e for e in series.registry(folder) if e["status"] == "measurement_version_changed"]
+            self.assertEqual(len(changed), 1)
+            self.assertNotIn(changed[0]["run_id"], " ".join(" ".join(a) for n, a, _ in self.calls if n == "analyst.py"))
+            self.assertEqual(len([e for e in series.registry(folder) if e["status"] == "not_started"]), 6)
+            self.assertTrue(os.path.exists(os.path.join(folder, series.VERSION_STOP_FILE)))
+            with self.assertRaises(SystemExit) as e:        # the next run of the series is refused
+                technical_run.day(self.ns(override=None, dry=False))
+            self.assertIn("another version", str(e.exception))
+            self.assertEqual(len(self.harness_tags()), 2)   # and nothing was sent
+            series.version_clear(self.ns(why="new versioned plan decided by the owner"))
+            self.assertFalse(os.path.exists(os.path.join(folder, series.VERSION_STOP_FILE)))
+            with open(os.path.join(folder, "neomundi_version_stops.jsonl"), encoding="utf-8") as f:
+                log = f.read()
+            self.assertIn("new versioned plan decided by the owner", log)
+        finally:
+            series.measurement = real
+
     def test_one_round_of_eight(self):
         sid, folder = self.ready()
         self.assertTrue(sid.startswith("TECH-"))
