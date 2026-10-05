@@ -336,6 +336,27 @@ class TestTechnicalRun(unittest.TestCase):
         finally:
             series.measurement = real
 
+    def test_the_version_is_read_before_links_and_schema(self):
+        # a new version that also changes the format of the answer: no links, no schema, an
+        # audit elsewhere. The real check still names it a change of version, not a missing
+        # measurement, so that the series stops
+        run_dir = os.path.join(self.tmp, "runs-v", "TP-X")
+        os.makedirs(os.path.join(run_dir, "neomundi", "responses"))
+        series.jdump(os.path.join(run_dir, "neomundi", "responses", "TP-X.C0001.A1.1.json"),
+                     {"result": {"version": "4.0"}, "something": "new"})
+        pl = {"neomundi": {"required": True, "schema": {"type": "object", "required": ["audit"]},
+                           "measurement_version": {"measurement_version": "3.1.0"}}}
+        ok, d = series.measurement(run_dir, pl)
+        self.assertFalse(ok)
+        self.assertEqual(d["version_mismatch"]["reported"], {"measurement_version": None})
+        with open(os.path.join(run_dir, "neomundi", "responses", "TP-X.C0002.A1.1.json"), "w") as f:
+            f.write("not json")
+        os.remove(os.path.join(run_dir, "neomundi", "responses", "TP-X.C0001.A1.1.json"))
+        ok, d = series.measurement(run_dir, pl)
+        self.assertIn("version_mismatch", d)                       # unreadable is not the pinned version
+        # without a pinned version (a rehearsal) nothing is read this way
+        self.assertIsNone(series.version_mismatch(run_dir, {}))
+
     def test_one_round_of_eight(self):
         sid, folder = self.ready()
         self.assertTrue(sid.startswith("TECH-"))

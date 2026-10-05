@@ -586,10 +586,36 @@ def purchase(model, tag, models_file, ids):
     return run_id, HARNESS_STOPS.get(code, "technical"), "harness exit %d: %s" % (code, " | ".join(tail))
 
 
+def version_mismatch(run_dir, pinned):
+    """The first saved NeoMundi response whose audit does not report the pinned version, or
+    None. A response that cannot be read as JSON, or that has no audit at all, does not report
+    the pinned version either."""
+    if not pinned:
+        return None
+    for f in sorted(glob.glob(os.path.join(run_dir, "neomundi", "responses", "*.json"))):
+        try:
+            data = fsio.read_json(f)
+        except Exception:
+            data = None
+        audit = data.get("audit") if isinstance(data, dict) and isinstance(data.get("audit"), dict) else {}
+        other = {k: audit.get(k) for k, v in pinned.items() if audit.get(k) != v}
+        if other:
+            return {"reported": other, "pinned": pinned, "file": os.path.basename(f)}
+    return None
+
+
 def measurement(run_dir, pl):
     """The NeoMundi observations of a run, checked one to one against its completed agent
     calls and against the schema the plan declares. Returns (ok, detail)."""
     req = pl.get("neomundi") or {}
+    # the version of the instrument is read first, from every saved response as it is, before
+    # links or schema: a new version may well change the format, and then the other checks
+    # would fail first and the change would pass for an ordinary missing measurement
+    mismatch = version_mismatch(run_dir, (req.get("measurement_version") or {}) if req.get("required") else {})
+    if mismatch:
+        return False, {"required": True, "version_mismatch": mismatch,
+                       "why": "%s was measured under %s; the plan pins %s"
+                              % (mismatch["file"], mismatch["reported"], mismatch["pinned"])}
     linked, link_detail = neomundi_client.verify_links(run_dir)
     if not req.get("required"):
         run_cfg = neomundi_client.run_config(run_dir) or {}
