@@ -1191,6 +1191,10 @@ class TestFinalPatch(RigCase):
         self.assertIn("pins no version of the measurement instrument", " ".join(series.neomundi_ready(self.tmp, pl)))
         self.assertEqual(series.neomundi_ready(self.tmp, dict(pl, counted=False)), [])
         pl["neomundi"]["measurement_version"] = {"measurement_version": "3.0.0"}
+        # and the evaluator configuration fingerprints, declared from the setup response:
+        # {} is a declaration (none reported), a missing key is not
+        self.assertIn("no evaluator configuration fingerprints", " ".join(series.neomundi_ready(self.tmp, pl)))
+        pl["neomundi"]["evaluator_fingerprints"] = {}
         self.assertEqual(series.neomundi_ready(self.tmp, pl), [])
         os.environ["TEST_PURCHASE_NEOMUNDI_CONFIG"] = path
         self.assertTrue(neomundi_client.freeze_config(self.run_dir)["enabled"])

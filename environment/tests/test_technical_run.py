@@ -357,6 +357,51 @@ class TestTechnicalRun(unittest.TestCase):
         # without a pinned version (a rehearsal) nothing is read this way
         self.assertIsNone(series.version_mismatch(run_dir, {}))
 
+    def test_evaluator_fingerprints_are_found_by_name_pinned_and_checked(self):
+        # NeoMundi did not know yet where 3.3.1 puts them: they are found by name wherever
+        # they sit, pinned from the setup response, and any change stops the series
+        def response(fp_fact="aaa", fp_tox=None, extra=False):
+            evaluators = [{"evaluator": "factuality", "status": "ok",
+                           "provenance": {"prompt_template_hash": "p1", "inference_config_hash": "i1",
+                                          "config_fingerprint": fp_fact}}]
+            if fp_tox:
+                evaluators.append({"evaluator": "toxicity", "provenance": {"config_fingerprint": fp_tox}})
+            d = {"request_id": "r", "audit": {"measurement_version": "3.3.1"}, "evaluators": evaluators}
+            if extra:
+                d["audit"]["config_fingerprint"] = "new"
+            return d
+        found = series.fingerprints(response())
+        self.assertEqual(found, {"/evaluators[0]/provenance/prompt_template_hash": "p1",
+                                 "/evaluators[0]/provenance/inference_config_hash": "i1",
+                                 "/evaluators[0]/provenance/config_fingerprint": "aaa"})
+        setup = os.path.join(self.tmp, "setup.json")
+        series.jdump(setup, response())
+        self.assertEqual(series.declared_fingerprints(self.ns(fingerprints_from=setup)), found)
+        self.assertIsNone(series.declared_fingerprints(self.ns(fingerprints_from=None)))
+        run_dir = os.path.join(self.tmp, "runs-fp", "TP-F")
+        os.makedirs(os.path.join(run_dir, "neomundi", "responses"))
+        f = os.path.join(run_dir, "neomundi", "responses", "TP-F.C0001.A1.1.json")
+        pinned_v = {"measurement_version": "3.3.1"}
+        series.jdump(f, response())
+        self.assertIsNone(series.version_mismatch(run_dir, pinned_v, found))
+        for changed in (response(fp_fact="bbb"), response(fp_tox="t1"), response(extra=True),
+                        {"request_id": "r", "audit": {"measurement_version": "3.3.1"}}):
+            series.jdump(f, changed)
+            m = series.version_mismatch(run_dir, pinned_v, found)
+            self.assertIsNotNone(m, changed)
+            self.assertIn("evaluator_fingerprints", m["reported"])
+        # the real check stops on it before links and schema, as on a change of version
+        pl = {"neomundi": {"required": True, "schema": {"type": "object", "required": ["x"]},
+                           "measurement_version": pinned_v, "evaluator_fingerprints": found}}
+        ok, d = series.measurement(run_dir, pl)
+        self.assertFalse(ok)
+        self.assertIn("version_mismatch", d)
+        # none reported at the setup ({}) is pinned too: fingerprints appearing later are a change
+        series.jdump(f, response())
+        self.assertIsNotNone(series.version_mismatch(run_dir, pinned_v, {}))
+        # a plan without fingerprints declared checks the version only
+        self.assertIsNone(series.version_mismatch(run_dir, pinned_v, None))
+
     def test_one_round_of_eight(self):
         sid, folder = self.ready()
         self.assertTrue(sid.startswith("TECH-"))

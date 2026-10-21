@@ -420,6 +420,30 @@ def plan(a):
     print("  ...")
 
 
+def declared_fingerprints(a):
+    """The fingerprints to pin, read from the response file of the setup observation; None
+    when no file is given."""
+    src = getattr(a, "fingerprints_from", None)
+    if not src:
+        return None
+    found = fingerprints(jload(src))
+    print("evaluator fingerprints in %s: %s" % (os.path.basename(src),
+          json.dumps(found, ensure_ascii=False) if found else "none reported"))
+    return found
+
+
+def inspect_response(a):
+    """What one NeoMundi response reports of what is to be retained: the fingerprints and the
+    provenance and coverage fields, by name wherever they are. Reads a file, sends nothing."""
+    data = jload(a.file)
+    print("fingerprints:")
+    for k, v in find_keys(data, FINGERPRINT_KEYS):
+        print("  %s = %s" % (k, json.dumps(v, ensure_ascii=False)))
+    print("provenance and coverage:")
+    for k, v in find_keys(data, PROVENANCE_KEYS):
+        print("  %s = %s" % (k, json.dumps(v, ensure_ascii=False)[:200]))
+
+
 def neomundi(a):
     sid, folder = current_series()
     pl = jload(os.path.join(folder, "plan.json"))
@@ -455,6 +479,10 @@ def neomundi(a):
                       "measurement_version": {k: v for k, v in (
                           ("measurement_version", a.measurement_version),
                           ("normalizer_version", a.normalizer_version)) if v} or None,
+                      # the evaluator configuration fingerprints, read from the response of the
+                      # setup observation: {} when that response reported none, None when not
+                      # declared yet
+                      "evaluator_fingerprints": declared_fingerprints(a),
                       "declared_at": now(),
                       "note": "a run whose neomundi/ folder holds no valid measurement "
                               "file is not frozen: pending_measurement"}
@@ -586,11 +614,43 @@ def purchase(model, tag, models_file, ids):
     return run_id, HARNESS_STOPS.get(code, "technical"), "harness exit %d: %s" % (code, " | ".join(tail))
 
 
-def version_mismatch(run_dir, pinned):
-    """The first saved NeoMundi response whose audit does not report the pinned version, or
-    None. A response that cannot be read as JSON, or that has no audit at all, does not report
-    the pinned version either."""
-    if not pinned:
+# the configuration of NeoMundi's evaluators: the measurement version alone does not show that
+# it stayed the same (NeoMundi, 21.10.2026). Found by name wherever they sit in a response
+FINGERPRINT_KEYS = ("prompt_template_hash", "inference_config_hash", "config_fingerprint")
+# what NeoMundi asked to retain for every observation, shown by `series.py inspect-response`
+PROVENANCE_KEYS = ("evaluator", "model_used", "model_configured", "status", "reason", "served_by",
+                   "attempts", "latency_ms", "evaluator_runtime", "measured_signals",
+                   "unmeasured_signals", "missing_required_signals", "degraded_g_inputs",
+                   "decision_basis", "measurement_version", "normalizer_version")
+
+
+def find_keys(obj, names, path=""):
+    """Every (path, value) in a JSON value whose key is one of names, in document order;
+    lists are walked with their index in the path."""
+    out = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            p = "%s/%s" % (path, k)
+            if k in names:
+                out.append((p, v))
+            out.extend(find_keys(v, names, p))
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            out.extend(find_keys(v, names, "%s[%d]" % (path, i)))
+    return out
+
+
+def fingerprints(data):
+    """The evaluator configuration fingerprints of one response, {path: value}."""
+    return {p: v for p, v in find_keys(data, FINGERPRINT_KEYS)}
+
+
+def version_mismatch(run_dir, pinned, pinned_fingerprints=None):
+    """The first saved NeoMundi response that does not report the pinned version, or whose
+    evaluator configuration fingerprints are not exactly the pinned ones (a changed value, a
+    missing one, or one the plan does not know), or None. A response that cannot be read as
+    JSON, or that has no audit at all, does not report the pinned version either."""
+    if not pinned and pinned_fingerprints is None:
         return None
     for f in sorted(glob.glob(os.path.join(run_dir, "neomundi", "responses", "*.json"))):
         try:
@@ -598,9 +658,17 @@ def version_mismatch(run_dir, pinned):
         except Exception:
             data = None
         audit = data.get("audit") if isinstance(data, dict) and isinstance(data.get("audit"), dict) else {}
-        other = {k: audit.get(k) for k, v in pinned.items() if audit.get(k) != v}
+        other = {k: audit.get(k) for k, v in (pinned or {}).items() if audit.get(k) != v}
         if other:
             return {"reported": other, "pinned": pinned, "file": os.path.basename(f)}
+        if pinned_fingerprints is not None:
+            found = fingerprints(data) if data is not None else {}
+            if found != pinned_fingerprints:
+                changed = {k: found.get(k) for k in sorted(set(found) | set(pinned_fingerprints))
+                           if found.get(k) != pinned_fingerprints.get(k)}
+                return {"reported": {"evaluator_fingerprints": changed},
+                        "pinned": {"evaluator_fingerprints": {k: pinned_fingerprints.get(k) for k in changed}},
+                        "file": os.path.basename(f)}
     return None
 
 
@@ -611,7 +679,8 @@ def measurement(run_dir, pl):
     # the version of the instrument is read first, from every saved response as it is, before
     # links or schema: a new version may well change the format, and then the other checks
     # would fail first and the change would pass for an ordinary missing measurement
-    mismatch = version_mismatch(run_dir, (req.get("measurement_version") or {}) if req.get("required") else {})
+    mismatch = version_mismatch(run_dir, (req.get("measurement_version") or {}) if req.get("required") else {},
+                                req.get("evaluator_fingerprints") if req.get("required") else None)
     if mismatch:
         return False, {"required": True, "version_mismatch": mismatch,
                        "why": "%s was measured under %s; the plan pins %s"
@@ -920,6 +989,9 @@ def neomundi_ready(folder, pl, keys=True):
     if pl.get("counted", True) and not (req.get("measurement_version") or {}).get("measurement_version"):
         problems.append("the plan pins no version of the measurement instrument: declare it with "
                         "series.py neomundi --measurement-version, as NeoMundi froze it")
+    if pl.get("counted", True) and req.get("evaluator_fingerprints") is None:
+        problems.append("the plan pins no evaluator configuration fingerprints: declare them with "
+                        "series.py neomundi --fingerprints-from <the response of the setup observation>")
     schema = req.get("schema")
     if not isinstance(schema, dict) or sha256_obj(schema) != req.get("schema_object_sha256"):
         problems.append("the declared NeoMundi schema is not intact")
@@ -1261,6 +1333,8 @@ def main():
     p.add_argument("--measurement-version", help="the frozen audit.measurement_version NeoMundi "
                    "gives; every response must report it")
     p.add_argument("--normalizer-version", help="the frozen audit.normalizer_version, if given")
+    p.add_argument("--fingerprints-from", help="the response file of the setup observation: its "
+                   "evaluator configuration fingerprints are pinned, wherever they sit")
     # the base URL is required: a declaration must not adopt a value silently
     p.add_argument("--base-url", required=True, help="the base URL NeoMundi confirmed")
     p.add_argument("--observe-path", default="/v1/govern")
@@ -1279,6 +1353,7 @@ def main():
     p.add_argument("--approved-estimate", required=True)
     p.add_argument("--override"); p.set_defaults(fn=retry)
     p = sub.add_parser("check-day"); p.add_argument("--date"); p.set_defaults(fn=check_day)
+    p = sub.add_parser("inspect-response"); p.add_argument("file"); p.set_defaults(fn=inspect_response)
     p = sub.add_parser("version-clear"); p.add_argument("--why", required=True)
     p.set_defaults(fn=version_clear)
     p = sub.add_parser("reclassify"); p.add_argument("--run", required=True)
