@@ -773,15 +773,9 @@ def analyse(run_id, pl, run_analyst=True):
         notes.append("measurement: " + changed)
         run_cmd(["cost.py", run_dir])
         return VERSION_CHANGED, notes
-    code, out, err = step(["validate_receipt.py", run_dir])
-    if code == 2:
-        notes.append("validate_receipt.py: the analysis is not in a checkable shape: %s"
-                     % (err or out).strip().splitlines()[-1][:200])
-        return "pending_review", notes
-    if code != 0:
-        notes.append("validate_receipt.py failed: %s" % (err or out).strip().splitlines()[-1:])
-        return "analysis_failed", notes
-    # the measurement is checked before the analyst is paid: a purchase whose observations
+    # the measurement is checked first, before the receipt and before the analyst is paid,
+    # so that whatever else is wrong with the purchase, an unusable measurement stops the
+    # series. Before the analyst is paid: a purchase whose observations
     # did not arrive cannot be frozen, and an analysis of it would be money spent on a
     # purchase that waits anyway. The cost of what was spent is written all the same
     ok, detail = measurement(run_dir, pl)
@@ -797,6 +791,14 @@ def analyse(run_id, pl, run_analyst=True):
         run_cmd(["cost.py", run_dir])
         measurement_stop(os.path.join(SERIES, pl["series"]), run_id, detail.get("why", "missing"))
         return "pending_measurement", notes
+    code, out, err = step(["validate_receipt.py", run_dir])
+    if code == 2:
+        notes.append("validate_receipt.py: the analysis is not in a checkable shape: %s"
+                     % (err or out).strip().splitlines()[-1][:200])
+        return "pending_review", notes
+    if code != 0:
+        notes.append("validate_receipt.py failed: %s" % (err or out).strip().splitlines()[-1:])
+        return "analysis_failed", notes
     steps = []
     if run_analyst:
         steps.append(["analyst.py", "--run", run_id, "--model", pl["analyst_model"]])

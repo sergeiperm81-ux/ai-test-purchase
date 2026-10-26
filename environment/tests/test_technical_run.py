@@ -477,6 +477,20 @@ class TestTechnicalRun(unittest.TestCase):
             series.current_series = saved
         self.assertFalse(os.path.exists(os.path.join(folder, series.MEASUREMENT_STOP_FILE)))
 
+    def test_a_bad_receipt_with_an_unusable_measurement_of_the_same_version_stops_the_series(self):
+        # the receipt would fail its check, and the measurement is unusable under the same
+        # version: the measurement is checked first, so the series stops all the same
+        folder = os.path.join(series.SERIES, "S-Z")
+        os.makedirs(folder)
+        pl = self._pinned_plan(folder)
+        self._run_with_response("TP-Z")
+        series.run_cmd = lambda args, timeout=1800, extra_env=None: (2, "", "not checkable")
+        status, notes = series.analyse("TP-Z", pl)
+        self.assertEqual(status, "pending_measurement")
+        self.assertIn(status, series.STOP_DAY)
+        self.assertTrue(os.path.exists(os.path.join(folder, series.MEASUREMENT_STOP_FILE)))
+        self.assertIn("could not be measured", " ".join(series.neomundi_ready(folder, pl)))
+
     def test_one_round_of_eight(self):
         sid, folder = self.ready()
         self.assertTrue(sid.startswith("TECH-"))
