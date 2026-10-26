@@ -294,37 +294,61 @@ class TestTechnicalRun(unittest.TestCase):
         finally:
             series.attempt_purchase, series.preflight = saved
 
-    def test_the_start_of_the_day_is_recorded_before_the_first_purchase(self):
-        # the record of the start comes before any purchase; if it cannot be written, nothing
-        # is bought. It is made once a start, not once a purchase, and not by a dry run
+    def test_each_purchase_is_recorded_before_it_is_paid_and_a_lost_one_is_never_bought_again(self):
+        # each purchase is written into the start marker before its first paid call; if that
+        # cannot be written, nothing is bought. A start that dies after paying for a purchase
+        # but before keeping it leaves the label in the marker and not in the registry: a later
+        # start buys nothing that day. Here: H kept, G paid but lost, the third start repeats
+        # neither G nor anything else
         today = datetime.date.today().isoformat()
         technical_run.plan(self.ns(start=today, seed=7, neomundi=False, window_utc="00:00-23:59",
                                    models=self.models))
         sid, folder = series.current_series()
-        mark = os.path.join(folder, "hook-calls.txt")
+        order = series.jload(os.path.join(folder, "plan.json"))["schedule"][0]["order"]
+        d = {"day": 1, "date": today}
+        marker = series.start_marker(folder, d)
+        hook = ('%s -c "import os; p=os.environ[\'TEST_PURCHASE_START_MARKER\']; os.makedirs(os.path.dirname(p), '
+                'exist_ok=True); open(p, \'a\').write(os.environ[\'TEST_PURCHASE_LABEL\'] + \' job\\n\')"'
+                % sys.executable)
         started = []
-        saved = series.attempt_purchase, series.preflight, os.environ.get("TEST_PURCHASE_BEFORE_FIRST_PURCHASE")
+        saved = series.attempt_purchase, series.preflight, os.environ.get("TEST_PURCHASE_BEFORE_PURCHASE")
         series.preflight = lambda folder, pl: None
-        series.attempt_purchase = lambda *a, **k: started.append(a[4]) or ("frozen", "TP-Y", "")
+
+        def buy(folder_, sid_, pl, d_, label, model, override, **k):
+            started.append(label)
+            series.record(folder_, {"series": sid_, "day": d_["day"], "date": d_["date"], "label": label,
+                                    "attempt": 1, "run_id": "TP-" + label, "status": "frozen",
+                                    "started_at": series.now(), "override": None, "note": ""})
+            return "frozen", "TP-" + label, ""
         try:
-            os.environ["TEST_PURCHASE_BEFORE_FIRST_PURCHASE"] = "exit 1"
+            os.environ["TEST_PURCHASE_BEFORE_PURCHASE"] = "exit 1"
+            series.attempt_purchase = buy
             with self.assertRaises(SystemExit) as e:
                 series.day(self.ns(day=None, date=None, only=None, dry=False, override=None))
             self.assertIn("nothing is bought", str(e.exception))
             self.assertEqual(started, [])
-            os.environ["TEST_PURCHASE_BEFORE_FIRST_PURCHASE"] = '%s -c "open(r\'%s\', \'a\').write(\'x\')"' % (sys.executable, mark)
+            os.environ["TEST_PURCHASE_BEFORE_PURCHASE"] = hook
             series.day(self.ns(day=None, date=None, only=None, dry=True, override=None))
-            self.assertFalse(os.path.exists(mark))
-            series.day(self.ns(day=None, date=None, only=None, dry=False, override=None))
-            self.assertEqual(len(started), len(series.jload(os.path.join(folder, "plan.json"))["schedule"][0]["order"]))
-            with open(mark) as f:
-                self.assertEqual(f.read(), "x")
+            self.assertFalse(os.path.exists(marker))                    # a dry run records nothing
+            # the first start keeps its first purchase, then pays for the second and dies
+            series.day(self.ns(day=None, date=None, only=order[0], dry=False, override=None))
+            with open(marker, "a") as f:
+                f.write(order[1] + " job\n")                           # paid, never kept
+            started.clear()
+            with self.assertRaises(SystemExit) as e:
+                series.day(self.ns(day=None, date=None, only=None, dry=False, override=None))
+            self.assertIn("%s of day 01 were started by an earlier start" % order[1], str(e.exception))
+            self.assertEqual(started, [])
+            with self.assertRaises(SystemExit):                         # nor through a retry
+                series.lost_purchases_stop(folder, d)
+            with open(marker) as f:
+                self.assertEqual([l.split()[0] for l in f], [order[0], order[1]])
         finally:
             series.attempt_purchase, series.preflight = saved[0], saved[1]
             if saved[2] is None:
-                os.environ.pop("TEST_PURCHASE_BEFORE_FIRST_PURCHASE", None)
+                os.environ.pop("TEST_PURCHASE_BEFORE_PURCHASE", None)
             else:
-                os.environ["TEST_PURCHASE_BEFORE_FIRST_PURCHASE"] = saved[2]
+                os.environ["TEST_PURCHASE_BEFORE_PURCHASE"] = saved[2]
 
     def test_a_dry_run_before_the_start_shows_the_next_day_and_a_real_one_refuses(self):
         import io, contextlib

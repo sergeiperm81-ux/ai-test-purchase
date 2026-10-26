@@ -1158,6 +1158,8 @@ def retry(a):
     model = jload(os.path.join(folder, "model_key.json"))["labels"][prior["label"]]["model"]
     decision = {"reason": a.reason, "spend_approved_by": a.approved_by,
                 "approved_estimate": a.approved_estimate, "requested_at": now()}
+    lost_purchases_stop(folder, d)
+    before_purchase(folder, d, prior["label"])
     attempt_purchase(folder, sid, pl, d, prior["label"], model, override,
                      supersedes=a.run, retry=decision)
     day_anchor(sid, folder, pl, d)
@@ -1211,7 +1213,7 @@ def day(a):
         anchor_plan(folder, sid)
     window = pl.get("window_utc")
     stop_day = None
-    day_start_recorded = False
+    lost_purchases_stop(folder, d)
     # a later start of the same day (a backup start of the schedule) keeps a stop the day
     # already met. The stops that leave a file (another version, an unusable measurement) are
     # held by the preflight until the owner clears them; these two leave none, and only the
@@ -1250,9 +1252,7 @@ def day(a):
                             "started_at": now(), "override": override, "note": stop_day})
             print("  %s not started: %s" % (label, stop_day))
             continue
-        if not day_start_recorded:
-            before_first_purchase()
-            day_start_recorded = True
+        before_purchase(folder, d, label)
         status, run_id, note = attempt_purchase(folder, sid, pl, d, label, model, override)
         if status in STOP_DAY:
             stop_day = "%s at label %s: %s" % (status, label, note[:160])
@@ -1260,18 +1260,40 @@ def day(a):
         day_anchor(sid, folder, pl, d)
 
 
-def before_first_purchase():
-    """Right before the first purchase a start of the day makes, the command named by
-    TEST_PURCHASE_BEFORE_FIRST_PURCHASE records the start where every later start of the day
-    will see it (on the runner: a marker committed and pushed to the repository). If it
-    cannot, nothing is bought: a later start that sees no record of this one could otherwise
-    buy the same purchases again."""
-    cmd = os.environ.get("TEST_PURCHASE_BEFORE_FIRST_PURCHASE")
+def start_marker(folder, d):
+    return os.path.join(folder, "days", "started-%s.txt" % d["date"])
+
+
+def before_purchase(folder, d, label):
+    """Right before each purchase, before its first paid call, the command named by
+    TEST_PURCHASE_BEFORE_PURCHASE records the label in the day's start marker where every later
+    start of the day will see it (on the runner: committed and pushed to the repository). If it
+    cannot, nothing is bought: a later start that sees no record of this purchase could
+    otherwise buy it again."""
+    cmd = os.environ.get("TEST_PURCHASE_BEFORE_PURCHASE")
     if not cmd:
         return
-    if subprocess.run(cmd, shell=True).returncode != 0:
-        raise SystemExit("the start of the day could not be recorded before the first purchase: "
-                         "nothing is bought")
+    env = dict(os.environ, TEST_PURCHASE_LABEL=label, TEST_PURCHASE_START_MARKER=start_marker(folder, d))
+    if subprocess.run(cmd, shell=True, env=env).returncode != 0:
+        raise SystemExit("the start of purchase %s could not be recorded before its first paid call: "
+                         "nothing is bought" % label)
+
+
+def lost_purchases_stop(folder, d):
+    """A label the start marker of the day names, with no attempt of it in the registry, was
+    started by an earlier start that died before keeping its results: the purchase may have
+    been paid. Nothing more is bought on this day until the owner decides."""
+    p = start_marker(folder, d)
+    if not os.path.exists(p):
+        return
+    with open(p, encoding="utf-8") as f:
+        started = {l.split()[0] for l in f if l.strip()}
+    recorded = {e["label"] for e in registry(folder) if e["day"] == d["day"] and e.get("attempt")}
+    lost = sorted(started - recorded)
+    if lost:
+        raise SystemExit("STOPPED: purchase(s) %s of day %02d were started by an earlier start and left "
+                         "no record: they may have been paid. Nothing more is bought today; the owner "
+                         "decides" % (", ".join(lost), d["day"]))
 
 
 def day_anchor(sid, folder, pl, d):
