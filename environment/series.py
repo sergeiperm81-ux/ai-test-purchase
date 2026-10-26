@@ -69,7 +69,11 @@ LABELS = "ABCDEFGHIJKL"
 # day, as a change of the served model does, and blocks the next days until the owner decides
 VERSION_CHANGED = "measurement_version_changed"
 VERSION_STOP_FILE = "neomundi_version_stop.json"
-STOP_DAY = ("budget_exceeded", "model_drift", VERSION_CHANGED)
+# a purchase whose measurement is unusable under the same version (observations missing,
+# not linked one to one, or failing the declared schema) stops the day too, and the next
+# days, so that the series does not go on spending on purchases it cannot measure
+MEASUREMENT_STOP_FILE = "neomundi_measurement_stop.json"
+STOP_DAY = ("budget_exceeded", "model_drift", VERSION_CHANGED, "pending_measurement")
 # "partial": the record of the purchase is frozen and its score is confirmed in some of the
 # twelve positions only; the others are null with their reasons. It is complete; its null
 # positions are not counted in any mean, and it has no sum and no index
@@ -764,6 +768,11 @@ def analyse(run_id, pl, run_analyst=True):
         return run_cmd(s, extra_env={"TEST_PURCHASE_MODELS_FILE": series_models,
                                      "TEST_PURCHASE_BUDGET_SCOPE": pl["series"]})
 
+    changed = instrument_changed(run_id, pl)
+    if changed:
+        notes.append("measurement: " + changed)
+        run_cmd(["cost.py", run_dir])
+        return VERSION_CHANGED, notes
     code, out, err = step(["validate_receipt.py", run_dir])
     if code == 2:
         notes.append("validate_receipt.py: the analysis is not in a checkable shape: %s"
@@ -786,6 +795,7 @@ def analyse(run_id, pl, run_analyst=True):
     if not ok:
         notes.append("measurement: " + detail.get("why", "missing"))
         run_cmd(["cost.py", run_dir])
+        measurement_stop(os.path.join(SERIES, pl["series"]), run_id, detail.get("why", "missing"))
         return "pending_measurement", notes
     steps = []
     if run_analyst:
@@ -815,6 +825,7 @@ def analyse(run_id, pl, run_analyst=True):
     ok, detail = measurement(run_dir, pl)
     if not ok:
         notes.append("measurement: " + detail.get("why", "missing"))
+        measurement_stop(os.path.join(SERIES, pl["series"]), run_id, detail.get("why", "missing"))
         return "pending_measurement", notes
     if pl.get("counted") is False:
         # written before the freeze, so that the freeze pins the mark itself
@@ -947,6 +958,45 @@ def version_stop(folder, run_id, mismatch):
                                      "version-clear records the decision"})
 
 
+def instrument_changed(run_id, pl):
+    """None, or why: a saved NeoMundi response of the run reports another version or other
+    evaluator fingerprints than the plan pins. On a change the series stop is written."""
+    req = pl.get("neomundi") or {}
+    if not req.get("required"):
+        return None
+    mismatch = version_mismatch(os.path.join(RUNS, run_id), req.get("measurement_version") or {},
+                                req.get("evaluator_fingerprints"))
+    if not mismatch:
+        return None
+    version_stop(os.path.join(SERIES, pl["series"]), run_id, mismatch)
+    return "%s was measured under %s; the plan pins %s" % (mismatch["file"], mismatch["reported"], mismatch["pinned"])
+
+
+def measurement_stop(folder, run_id, why):
+    """Records that a purchase could not be measured under the pinned version. While the record
+    stands, no day of the series runs."""
+    p = os.path.join(folder, MEASUREMENT_STOP_FILE)
+    if not os.path.exists(p):
+        jdump(p, {"at": now(), "run_id": run_id, "why": why,
+                  "what_this_means": "a purchase of the series could not be measured. No further "
+                                     "day runs until the owner decides; series.py "
+                                     "measurement-clear records the decision"})
+
+
+def measurement_clear(a):
+    """The owner's decision after an unusable measurement: the stop record is moved into the
+    series log with the reason, and the days may run again."""
+    sid, folder = current_series()
+    p = os.path.join(folder, MEASUREMENT_STOP_FILE)
+    if not os.path.exists(p):
+        raise SystemExit("no measurement stop in series %s" % sid)
+    entry = dict(jload(p), cleared_at=now(), cleared_because=a.why)
+    with open(os.path.join(folder, "neomundi_measurement_stops.jsonl"), "a", encoding="utf-8", newline="") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    os.remove(p)
+    print("measurement stop cleared in %s: %s" % (sid, a.why))
+
+
 def version_clear(a):
     """The owner's decision after a change of version: the stop record is moved into the
     series log with the reason, and the days may run again. A new version is a new plan."""
@@ -973,6 +1023,11 @@ def neomundi_ready(folder, pl, keys=True):
         return ["NeoMundi answered under another version (%s; the plan pins %s) in %s: the series "
                 "is stopped until the owner decides (series.py version-clear)"
                 % (st.get("reported"), st.get("pinned"), st.get("run_id"))]
+    stop = os.path.join(folder, MEASUREMENT_STOP_FILE)
+    if os.path.exists(stop):
+        st = jload(stop)
+        return ["a purchase could not be measured (%s: %s): the series is stopped until the owner "
+                "decides (series.py measurement-clear)" % (st.get("run_id"), str(st.get("why"))[:200])]
     if not req.get("required"):
         return []
     path = os.path.join(folder, req.get("config_file") or "neomundi-config.json")
@@ -1028,6 +1083,14 @@ def attempt_purchase(folder, sid, pl, d, label, model, override, supersedes=None
     entry = {"series": sid, "day": d["day"], "date": d["date"], "label": label,
              "attempt": attempt, "run_id": run_id, "supersedes": supersedes, "retry": retry,
              "started_at": started, "override": override}
+    changed = instrument_changed(run_id, pl) if run_id else None
+    if changed:
+        # whatever became of the purchase, an answer under another version or evaluator
+        # configuration stops the day and the series; what the purchase was is kept in the note
+        record(folder, dict(entry, status=VERSION_CHANGED,
+                            note="%s | the purchase itself: %s" % (changed, kind if kind != "complete" else "complete")))
+        print("     %s: %s" % (VERSION_CHANGED, changed[:160]))
+        return VERSION_CHANGED, run_id, changed
     if kind != "complete":
         if NOT_COUNTED[kind] == STOPPED_BY_AGENT and run_id:
             # a result of the purchase: its record is pinned like any closed purchase
@@ -1354,6 +1417,8 @@ def main():
     p.add_argument("--override"); p.set_defaults(fn=retry)
     p = sub.add_parser("check-day"); p.add_argument("--date"); p.set_defaults(fn=check_day)
     p = sub.add_parser("inspect-response"); p.add_argument("file"); p.set_defaults(fn=inspect_response)
+    p = sub.add_parser("measurement-clear"); p.add_argument("--why", required=True)
+    p.set_defaults(fn=measurement_clear)
     p = sub.add_parser("version-clear"); p.add_argument("--why", required=True)
     p.set_defaults(fn=version_clear)
     p = sub.add_parser("reclassify"); p.add_argument("--run", required=True)

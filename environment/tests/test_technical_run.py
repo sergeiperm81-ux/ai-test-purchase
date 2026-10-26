@@ -145,12 +145,21 @@ class TestTechnicalRun(unittest.TestCase):
         self.assertEqual(analysed, [])
         self.assertIn(("cost.py", run_dir), [(name, a[1]) for name, a, _ in self.calls if name == "cost.py"])
         self.assertEqual(len([a for name, a, _ in self.calls if name == "analyst.py"]), 2)
-        self.assertIn("the NeoMundi breaker is open: oversize on", held[0]["note"])
+        # the unmeasured purchase stops the day itself (and the breaker is open as well)
+        self.assertIn("pending_measurement at label", held[0]["note"])
+        self.assertTrue(os.path.exists(os.path.join(folder, series.MEASUREMENT_STOP_FILE)))
         provisional = glob.glob(os.path.join(folder, "%s.rehearsal.*.json" % sid))
         self.assertEqual(len(provisional), 1)
         anchor = series.jload(provisional[0])
         self.assertEqual((anchor["state"], anchor["purchases_complete"]), ("provisional", 3))
         self.assertTrue(neomundi_client.reset_breaker(sid))
+        # with the breaker reset, the series still waits for the owner's decision on the
+        # unmeasured purchase: nothing is sent
+        with self.assertRaises(SystemExit) as e:
+            technical_run.day(self.ns(override=None, dry=False))
+        self.assertIn("could not be measured", str(e.exception))
+        self.assertEqual(len(self.harness_tags()), 3)
+        series.measurement_clear(self.ns(why="oversize found and fixed; the owner resumes the round"))
         technical_run.day(self.ns(override=None, dry=False))
         self.assertEqual(sorted(self.harness_tags()), ["D01-%s" % c for c in "ABCDEFGH"])
         # the tripped purchase stays pending_measurement until its observations arrive or an
@@ -401,6 +410,72 @@ class TestTechnicalRun(unittest.TestCase):
         self.assertIsNotNone(series.version_mismatch(run_dir, pinned_v, {}))
         # a plan without fingerprints declared checks the version only
         self.assertIsNone(series.version_mismatch(run_dir, pinned_v, None))
+
+    def _pinned_plan(self, folder):
+        return {"series": os.path.basename(folder), "counted": True,
+                "neomundi": {"required": True, "config_file": "neomundi-config.json",
+                             "measurement_version": {"measurement_version": "3.3.1"},
+                             "evaluator_fingerprints": {"/evaluators/f/config_fingerprint": "aaa"}}}
+
+    def _run_with_response(self, run_id, version="3.3.1", fp="aaa"):
+        run_dir = os.path.join(series.RUNS, run_id)
+        os.makedirs(os.path.join(run_dir, "neomundi", "responses"), exist_ok=True)
+        series.jdump(os.path.join(run_dir, "manifest.json"), {"run_id": run_id, "model_reported": "m"})
+        series.jdump(os.path.join(run_dir, "neomundi", "responses", run_id + ".C0001.A1.1.json"),
+                     {"audit": {"measurement_version": version}, "evaluators": {"f": {"config_fingerprint": fp}}})
+        return run_dir
+
+    def test_an_aborted_purchase_under_another_version_stops_the_series(self):
+        # the purchase broke off (a technical failure), but the answers it already got from
+        # NeoMundi report another version: that is a change of the instrument, it stops the day,
+        # and the next day does not start
+        folder = os.path.join(series.SERIES, "S-X")
+        os.makedirs(folder)
+        pl = self._pinned_plan(folder)
+        saved = series.purchase
+        series.purchase = lambda model, tag, models, ids: (
+            self._run_with_response("TP-%s-0001" % tag, version="3.4.0") and None) or (
+            "TP-%s-0001" % tag, "technical", "harness exit 3: provider error")
+        try:
+            status, run_id, note = series.attempt_purchase(folder, "S-X", pl, {"day": 1, "date": "x"}, "A", "m", None)
+        finally:
+            series.purchase = saved
+        self.assertEqual(status, "measurement_version_changed")
+        self.assertIn(status, series.STOP_DAY)
+        self.assertIn("the purchase itself: technical", series.registry(folder)[-1]["note"])
+        self.assertTrue(os.path.exists(os.path.join(folder, series.VERSION_STOP_FILE)))
+        self.assertIn("another version", " ".join(series.neomundi_ready(folder, pl)))
+        # a changed evaluator fingerprint under the same version does the same
+        os.remove(os.path.join(folder, series.VERSION_STOP_FILE))
+        self._run_with_response("TP-FP", fp="bbb")
+        self.assertIsNotNone(series.instrument_changed("TP-FP", pl))
+        self.assertTrue(os.path.exists(os.path.join(folder, series.VERSION_STOP_FILE)))
+
+    def test_the_version_is_checked_before_the_receipt_and_a_bad_measurement_stops_the_series(self):
+        folder = os.path.join(series.SERIES, "S-Y")
+        os.makedirs(folder)
+        pl = self._pinned_plan(folder)
+        # a receipt that would not validate: the version is still read first
+        self._run_with_response("TP-V", version="3.4.0")
+        series.run_cmd = lambda args, timeout=1800, extra_env=None: (2, "", "not checkable")
+        status, notes = series.analyse("TP-V", pl)
+        self.assertEqual(status, "measurement_version_changed")
+        # same version, but the measurement is unusable (no links): the series stops, not only
+        # the purchase, and the next day waits for the owner
+        os.remove(os.path.join(folder, series.VERSION_STOP_FILE))
+        self._run_with_response("TP-M")
+        series.run_cmd = lambda args, timeout=1800, extra_env=None: (0, "", "")
+        status, notes = series.analyse("TP-M", pl)
+        self.assertEqual(status, "pending_measurement")
+        self.assertIn(status, series.STOP_DAY)
+        self.assertTrue(os.path.exists(os.path.join(folder, series.MEASUREMENT_STOP_FILE)))
+        self.assertIn("could not be measured", " ".join(series.neomundi_ready(folder, pl)))
+        series.current_series, saved = (lambda: ("S-Y", folder)), series.current_series
+        try:
+            series.measurement_clear(self.ns(why="checked with NeoMundi, resumed by the owner"))
+        finally:
+            series.current_series = saved
+        self.assertFalse(os.path.exists(os.path.join(folder, series.MEASUREMENT_STOP_FILE)))
 
     def test_one_round_of_eight(self):
         sid, folder = self.ready()
