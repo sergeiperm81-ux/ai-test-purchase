@@ -268,6 +268,32 @@ class TestTechnicalRun(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(folder, "TECH-X.rehearsal.final.json")), os.listdir(folder))
         shutil.rmtree(tmp, ignore_errors=True)
 
+    def test_a_backup_start_keeps_a_stop_the_day_already_met(self):
+        # the first start of the day stopped on a model drift; the backup start of the schedule
+        # finds it in the registry and starts nothing. The owner may run the rest with --only
+        today = datetime.date.today().isoformat()
+        technical_run.plan(self.ns(start=today, seed=7, neomundi=False, window_utc="00:00-23:59",
+                                   models=self.models))
+        sid, folder = series.current_series()
+        order = series.jload(os.path.join(folder, "plan.json"))["schedule"][0]["order"]
+        series.record(folder, {"series": sid, "day": 1, "date": today, "label": order[0], "attempt": 1,
+                               "run_id": "TP-X", "status": "model_drift", "started_at": series.now(),
+                               "override": None, "note": "the provider answered as another model"})
+        started = []
+        saved = series.attempt_purchase, series.preflight
+        series.preflight = lambda folder, pl: None
+        series.attempt_purchase = lambda *a, **k: started.append(a[4]) or ("frozen", "TP-Y", "")
+        try:
+            series.day(self.ns(day=None, date=None, only=None, dry=False, override=None))
+            self.assertEqual(started, [])
+            held = [e for e in series.registry(folder) if e["status"] == "not_started"]
+            self.assertEqual(len(held), len(order) - 1)
+            self.assertIn("model_drift at label %s earlier on this day" % order[0], held[0]["note"])
+            series.day(self.ns(day=None, date=None, only=order[1], dry=False, override=None))
+            self.assertEqual(started, [order[1]])
+        finally:
+            series.attempt_purchase, series.preflight = saved
+
     def test_a_dry_run_before_the_start_shows_the_next_day_and_a_real_one_refuses(self):
         import io, contextlib
         tomorrow = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()

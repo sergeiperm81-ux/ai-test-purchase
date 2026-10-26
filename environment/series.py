@@ -1211,6 +1211,15 @@ def day(a):
         anchor_plan(folder, sid)
     window = pl.get("window_utc")
     stop_day = None
+    # a later start of the same day (a backup start of the schedule) keeps a stop the day
+    # already met. The stops that leave a file (another version, an unusable measurement) are
+    # held by the preflight until the owner clears them; these two leave none, and only the
+    # owner, naming the labels with --only, runs the rest of such a day
+    earlier = next((e for e in registry(folder) if e["day"] == d["day"]
+                    and e["status"] in ("budget_exceeded", "model_drift")), None)
+    if earlier and not only and not a.dry:
+        stop_day = "%s at label %s earlier on this day: %s" % (
+            earlier["status"], earlier["label"], str(earlier.get("note"))[:160])
     for label in d["order"]:
         if only and label not in only:
             continue
