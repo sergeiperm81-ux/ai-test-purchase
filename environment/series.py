@@ -974,6 +974,18 @@ def instrument_changed(run_id, pl):
     return "%s was measured under %s; the plan pins %s" % (mismatch["file"], mismatch["reported"], mismatch["pinned"])
 
 
+def unusable_measurement(run_id, pl):
+    """None, or why: the agent calls a purchase completed before it ended are not measured
+    one to one, or their observations fail the declared schema. A purchase that ended before
+    any agent call completed has nothing to measure and is not a stop."""
+    if not (pl.get("neomundi") or {}).get("required"):
+        return None
+    ok, detail = measurement(os.path.join(RUNS, run_id), pl)
+    if ok or detail.get("why") == "no completed agent call":
+        return None
+    return detail.get("why", "missing")
+
+
 def measurement_stop(folder, run_id, why):
     """Records that a purchase could not be measured under the pinned version. While the record
     stands, no day of the series runs."""
@@ -1093,6 +1105,15 @@ def attempt_purchase(folder, sid, pl, d, label, model, override, supersedes=None
                             note="%s | the purchase itself: %s" % (changed, kind if kind != "complete" else "complete")))
         print("     %s: %s" % (VERSION_CHANGED, changed[:160]))
         return VERSION_CHANGED, run_id, changed
+    unusable = unusable_measurement(run_id, pl) if run_id and kind != "complete" else None
+    if unusable:
+        # the purchase broke off, and what NeoMundi already measured of it is unusable under
+        # the same version: the day and the series stop as for a complete purchase
+        measurement_stop(folder, run_id, unusable)
+        why = "measurement: %s | the purchase itself: %s: %s" % (unusable, kind, note)
+        record(folder, dict(entry, status="pending_measurement", note=why))
+        print("     pending_measurement: %s" % why[:160])
+        return "pending_measurement", run_id, why
     if kind != "complete":
         if NOT_COUNTED[kind] == STOPPED_BY_AGENT and run_id:
             # a result of the purchase: its record is pinned like any closed purchase

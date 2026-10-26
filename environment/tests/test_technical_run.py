@@ -491,6 +491,43 @@ class TestTechnicalRun(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(folder, series.MEASUREMENT_STOP_FILE)))
         self.assertIn("could not be measured", " ".join(series.neomundi_ready(folder, pl)))
 
+    def test_an_aborted_purchase_with_an_unusable_measurement_of_the_same_version_stops_the_series(self):
+        # the purchase broke off after one agent call had completed, and that call has no
+        # observation: under the same version this is an unusable measurement, and the series
+        # stops; a purchase that broke off before any agent call completed is not a stop
+        folder = os.path.join(series.SERIES, "S-W")
+        os.makedirs(folder)
+        pl = self._pinned_plan(folder)
+
+        def broken(tag, completed):
+            run_id = "TP-%s-0001" % tag
+            run_dir = self._run_with_response(run_id)
+            if completed:
+                aid = run_id + ".C0001.A1"
+                series.jdump(os.path.join(run_dir, "calls", "x.json"), {})
+                with open(os.path.join(run_dir, "calls", "calls.jsonl"), "w", encoding="utf-8") as f:
+                    f.write(json.dumps({"event": "sending", "provider_attempt_id": aid, "role": "agent",
+                                        "operation_id": "C0001"}) + "\n")
+                    f.write(json.dumps({"event": "result", "provider_attempt_id": aid,
+                                        "outcome": "completed"}) + "\n")
+            return run_id, "technical", "harness exit 3: provider error"
+
+        saved = series.purchase
+        try:
+            series.purchase = lambda model, tag, models, ids: broken(tag, False)
+            status, run_id, note = series.attempt_purchase(folder, "S-W", pl, {"day": 1, "date": "x"}, "A", "m", None)
+            self.assertEqual(status, "technical_failure")
+            self.assertFalse(os.path.exists(os.path.join(folder, series.MEASUREMENT_STOP_FILE)))
+            series.purchase = lambda model, tag, models, ids: broken(tag, True)
+            status, run_id, note = series.attempt_purchase(folder, "S-W", pl, {"day": 1, "date": "x"}, "B", "m", None)
+        finally:
+            series.purchase = saved
+        self.assertEqual(status, "pending_measurement")
+        self.assertIn(status, series.STOP_DAY)
+        self.assertIn("the purchase itself: technical", series.registry(folder)[-1]["note"])
+        self.assertTrue(os.path.exists(os.path.join(folder, series.MEASUREMENT_STOP_FILE)))
+        self.assertIn("could not be measured", " ".join(series.neomundi_ready(folder, pl)))
+
     def test_one_round_of_eight(self):
         sid, folder = self.ready()
         self.assertTrue(sid.startswith("TECH-"))
