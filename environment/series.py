@@ -1211,6 +1211,7 @@ def day(a):
         anchor_plan(folder, sid)
     window = pl.get("window_utc")
     stop_day = None
+    day_start_recorded = False
     # a later start of the same day (a backup start of the schedule) keeps a stop the day
     # already met. The stops that leave a file (another version, an unusable measurement) are
     # held by the preflight until the owner clears them; these two leave none, and only the
@@ -1249,11 +1250,28 @@ def day(a):
                             "started_at": now(), "override": override, "note": stop_day})
             print("  %s not started: %s" % (label, stop_day))
             continue
+        if not day_start_recorded:
+            before_first_purchase()
+            day_start_recorded = True
         status, run_id, note = attempt_purchase(folder, sid, pl, d, label, model, override)
         if status in STOP_DAY:
             stop_day = "%s at label %s: %s" % (status, label, note[:160])
     if not a.dry:
         day_anchor(sid, folder, pl, d)
+
+
+def before_first_purchase():
+    """Right before the first purchase a start of the day makes, the command named by
+    TEST_PURCHASE_BEFORE_FIRST_PURCHASE records the start where every later start of the day
+    will see it (on the runner: a marker committed and pushed to the repository). If it
+    cannot, nothing is bought: a later start that sees no record of this one could otherwise
+    buy the same purchases again."""
+    cmd = os.environ.get("TEST_PURCHASE_BEFORE_FIRST_PURCHASE")
+    if not cmd:
+        return
+    if subprocess.run(cmd, shell=True).returncode != 0:
+        raise SystemExit("the start of the day could not be recorded before the first purchase: "
+                         "nothing is bought")
 
 
 def day_anchor(sid, folder, pl, d):

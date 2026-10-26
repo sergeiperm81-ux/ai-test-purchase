@@ -294,6 +294,38 @@ class TestTechnicalRun(unittest.TestCase):
         finally:
             series.attempt_purchase, series.preflight = saved
 
+    def test_the_start_of_the_day_is_recorded_before_the_first_purchase(self):
+        # the record of the start comes before any purchase; if it cannot be written, nothing
+        # is bought. It is made once a start, not once a purchase, and not by a dry run
+        today = datetime.date.today().isoformat()
+        technical_run.plan(self.ns(start=today, seed=7, neomundi=False, window_utc="00:00-23:59",
+                                   models=self.models))
+        sid, folder = series.current_series()
+        mark = os.path.join(folder, "hook-calls.txt")
+        started = []
+        saved = series.attempt_purchase, series.preflight, os.environ.get("TEST_PURCHASE_BEFORE_FIRST_PURCHASE")
+        series.preflight = lambda folder, pl: None
+        series.attempt_purchase = lambda *a, **k: started.append(a[4]) or ("frozen", "TP-Y", "")
+        try:
+            os.environ["TEST_PURCHASE_BEFORE_FIRST_PURCHASE"] = "exit 1"
+            with self.assertRaises(SystemExit) as e:
+                series.day(self.ns(day=None, date=None, only=None, dry=False, override=None))
+            self.assertIn("nothing is bought", str(e.exception))
+            self.assertEqual(started, [])
+            os.environ["TEST_PURCHASE_BEFORE_FIRST_PURCHASE"] = '%s -c "open(r\'%s\', \'a\').write(\'x\')"' % (sys.executable, mark)
+            series.day(self.ns(day=None, date=None, only=None, dry=True, override=None))
+            self.assertFalse(os.path.exists(mark))
+            series.day(self.ns(day=None, date=None, only=None, dry=False, override=None))
+            self.assertEqual(len(started), len(series.jload(os.path.join(folder, "plan.json"))["schedule"][0]["order"]))
+            with open(mark) as f:
+                self.assertEqual(f.read(), "x")
+        finally:
+            series.attempt_purchase, series.preflight = saved[0], saved[1]
+            if saved[2] is None:
+                os.environ.pop("TEST_PURCHASE_BEFORE_FIRST_PURCHASE", None)
+            else:
+                os.environ["TEST_PURCHASE_BEFORE_FIRST_PURCHASE"] = saved[2]
+
     def test_a_dry_run_before_the_start_shows_the_next_day_and_a_real_one_refuses(self):
         import io, contextlib
         tomorrow = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
