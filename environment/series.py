@@ -1082,8 +1082,7 @@ def attempt_purchase(folder, sid, pl, d, label, model, override, supersedes=None
     """Exactly one purchase attempt, then its analysis if it completed. Nothing here repeats
     a purchase. Returns (status, run_id, note)."""
     tag = "D%02d-%s" % (d["day"], label)
-    attempt = 1 + sum(1 for e in registry(folder)
-                      if e["day"] == d["day"] and e["label"] == label and e.get("attempt"))
+    attempt = next_attempt(folder, d, label)
     started = now()
     print("  %s -> %s, attempt %d%s" % (label, model, attempt,
                                         " (operator retry of %s)" % supersedes if retry else ""), flush=True)
@@ -1260,6 +1259,11 @@ def day(a):
         day_anchor(sid, folder, pl, d)
 
 
+def next_attempt(folder, d, label):
+    return 1 + sum(1 for e in registry(folder)
+                   if e["day"] == d["day"] and e["label"] == label and e.get("attempt"))
+
+
 def start_marker(folder, d):
     return os.path.join(folder, "days", "started-%s.txt" % d["date"])
 
@@ -1273,7 +1277,10 @@ def before_purchase(folder, d, label):
     cmd = os.environ.get("TEST_PURCHASE_BEFORE_PURCHASE")
     if not cmd:
         return
-    env = dict(os.environ, TEST_PURCHASE_LABEL=label, TEST_PURCHASE_START_MARKER=start_marker(folder, d))
+    # the label with its attempt: an operator's retry of a label is told apart from the
+    # attempt before it
+    env = dict(os.environ, TEST_PURCHASE_LABEL="%s#%d" % (label, next_attempt(folder, d, label)),
+               TEST_PURCHASE_START_MARKER=start_marker(folder, d))
     if subprocess.run(cmd, shell=True, env=env).returncode != 0:
         raise SystemExit("the start of purchase %s could not be recorded before its first paid call: "
                          "nothing is bought" % label)
@@ -1287,8 +1294,9 @@ def lost_purchases_stop(folder, d):
     if not os.path.exists(p):
         return
     with open(p, encoding="utf-8") as f:
-        started = {l.split()[0] for l in f if l.strip()}
-    recorded = {e["label"] for e in registry(folder) if e["day"] == d["day"] and e.get("attempt")}
+        started = {l.split()[0] if "#" in l.split()[0] else l.split()[0] + "#1" for l in f if l.strip()}
+    recorded = {"%s#%d" % (e["label"], e["attempt"]) for e in registry(folder)
+                if e["day"] == d["day"] and e.get("attempt")}
     lost = sorted(started - recorded)
     if lost:
         raise SystemExit("STOPPED: purchase(s) %s of day %02d were started by an earlier start and left "

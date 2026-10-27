@@ -333,16 +333,24 @@ class TestTechnicalRun(unittest.TestCase):
             # the first start keeps its first purchase, then pays for the second and dies
             series.day(self.ns(day=None, date=None, only=order[0], dry=False, override=None))
             with open(marker, "a") as f:
-                f.write(order[1] + " job\n")                           # paid, never kept
+                f.write(order[1] + "#1 job\n")                         # paid, never kept
             started.clear()
             with self.assertRaises(SystemExit) as e:
                 series.day(self.ns(day=None, date=None, only=None, dry=False, override=None))
-            self.assertIn("%s of day 01 were started by an earlier start" % order[1], str(e.exception))
+            self.assertIn("%s#1 of day 01 were started by an earlier start" % order[1], str(e.exception))
             self.assertEqual(started, [])
             with self.assertRaises(SystemExit):                         # nor through a retry
                 series.lost_purchases_stop(folder, d)
             with open(marker) as f:
-                self.assertEqual([l.split()[0] for l in f], [order[0], order[1]])
+                self.assertEqual([l.split()[0] for l in f], [order[0] + "#1", order[1] + "#1"])
+            # an operator's retry of a kept label that is paid and lost: the attempt tells it
+            # apart from the kept one, and the day stops all the same
+            os.remove(marker)
+            with open(marker, "w") as f:
+                f.write(order[0] + "#1 job\n" + order[0] + "#2 job\n")
+            with self.assertRaises(SystemExit) as e:
+                series.lost_purchases_stop(folder, d)
+            self.assertIn("%s#2" % order[0], str(e.exception))
         finally:
             series.attempt_purchase, series.preflight = saved[0], saved[1]
             if saved[2] is None:
