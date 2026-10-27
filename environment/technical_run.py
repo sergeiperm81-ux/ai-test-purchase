@@ -145,7 +145,13 @@ def day(a):
     if not a.dry:
         preflight_all(sid, folder)
     ns = types.SimpleNamespace(day=1, date=None, only=None, dry=a.dry, override=a.override)
-    series.day(ns)
+    try:
+        series.day(ns)
+    except SystemExit as e:
+        # a day that ran and ended not closed still gets the anchor of the rehearsal
+        if not a.dry and str(e).startswith("DAY NOT CLOSED"):
+            rehearsal_anchor(sid, folder, pl)
+        raise
     if not a.dry:
         rehearsal_anchor(sid, folder, pl)
 

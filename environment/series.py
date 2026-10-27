@@ -49,7 +49,7 @@ Usage:
   python series.py final
   python series.py status
 """
-import os, sys, json, time, random, hashlib, argparse, datetime, subprocess, shutil, glob, secrets
+import os, re, sys, json, time, random, hashlib, argparse, datetime, subprocess, shutil, glob, secrets
 import fsio
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -520,6 +520,19 @@ def record(folder, entry):
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
+def day_state(folder, d):
+    """The registry entries of a day, its labels without an attempt and those not closed."""
+    reg = [e for e in registry(folder) if e["day"] == d["day"]]
+    missing, open_ = [], []
+    for label in d["order"]:
+        es = [e for e in reg if e["label"] == label]
+        if not es:
+            missing.append(label)
+        elif not any(e["status"] in CLOSED for e in es):
+            open_.append("%s (%s)" % (label, es[-1]["status"]))
+    return reg, missing, open_
+
+
 def check_day(a):
     """The free evening check of a day: did every label of today's day get a closed purchase?
     Nothing is sent and nothing is run. A day with a label missing or not closed exits 1, so
@@ -533,14 +546,7 @@ def check_day(a):
     if not d:
         print("series %s: no day planned on %s" % (sid, date))
         return
-    reg = [e for e in registry(folder) if e["day"] == d["day"]]
-    missing, open_ = [], []
-    for label in d["order"]:
-        es = [e for e in reg if e["label"] == label]
-        if not es:
-            missing.append(label)
-        elif not any(e["status"] in CLOSED for e in es):
-            open_.append("%s (%s)" % (label, es[-1]["status"]))
+    reg, missing, open_ = day_state(folder, d)
     print("series %s, day %02d (%s): %d of %d labels closed"
           % (sid, d["day"], d["date"], len(d["order"]) - len(missing) - len(open_), len(d["order"])))
     if not reg:
@@ -649,6 +655,56 @@ def fingerprints(data):
     return {p: v for p, v in find_keys(data, FINGERPRINT_KEYS)}
 
 
+def node_at(data, path):
+    """The node of data at a path as find_keys writes it ("/a/b[0]/c"), or None."""
+    node = data
+    for name, index in re.findall(r"/([^/\[]+)|\[(\d+)\]", path):
+        if name and isinstance(node, dict):
+            node = node.get(name)
+        elif index and isinstance(node, list) and int(index) < len(node):
+            node = node[int(index)]
+        else:
+            return None
+    return node
+
+
+def not_measured_at(data, path):
+    """The evaluator a fingerprint path belongs to, when NeoMundi reports it as not measured:
+    {"evaluator": the path of the evaluator, "reason": its reason}, or None. The evaluator is
+    the nearest node above the fingerprint that has a status."""
+    parts = re.findall(r"/[^/\[]+|\[\d+\]", path)
+    for n in range(len(parts) - 1, 0, -1):
+        prefix = "".join(parts[:n])
+        node = node_at(data, prefix)
+        if isinstance(node, dict) and "status" in node:
+            if node.get("status") == "not_measured":
+                return {"evaluator": prefix, "reason": node.get("reason")}
+            return None
+    return None
+
+
+def unmeasured(run_dir, pinned_fingerprints):
+    """The pinned evaluators NeoMundi reported as not measured, in the saved responses of a
+    run: [{"file", "evaluator", "reason"}]. Their fingerprints are missing because the
+    evaluator did not run, not because the instrument changed; the measurement of such an
+    observation is incomplete under the same version."""
+    out = []
+    if not pinned_fingerprints:
+        return out
+    for f in sorted(glob.glob(os.path.join(run_dir, "neomundi", "responses", "*.json"))):
+        try:
+            data = fsio.read_json(f)
+        except Exception:
+            continue
+        seen = set()
+        for k in sorted(pinned_fingerprints):
+            nm = not_measured_at(data, k) if fingerprints(data).get(k) is None else None
+            if nm and nm["evaluator"] not in seen:
+                seen.add(nm["evaluator"])
+                out.append(dict(nm, file=os.path.basename(f)))
+    return out
+
+
 def version_mismatch(run_dir, pinned, pinned_fingerprints=None):
     """The first saved NeoMundi response that does not report the pinned version, or whose
     evaluator configuration fingerprints are not exactly the pinned ones (a changed value, a
@@ -667,9 +723,12 @@ def version_mismatch(run_dir, pinned, pinned_fingerprints=None):
             return {"reported": other, "pinned": pinned, "file": os.path.basename(f)}
         if pinned_fingerprints is not None:
             found = fingerprints(data) if data is not None else {}
-            if found != pinned_fingerprints:
-                changed = {k: found.get(k) for k in sorted(set(found) | set(pinned_fingerprints))
-                           if found.get(k) != pinned_fingerprints.get(k)}
+            # a fingerprint missing because its evaluator was not measured is not a change of
+            # the instrument: measurement() reports it as an incomplete measurement
+            changed = {k: found.get(k) for k in sorted(set(found) | set(pinned_fingerprints))
+                       if found.get(k) != pinned_fingerprints.get(k)
+                       and not (found.get(k) is None and not_measured_at(data, k))}
+            if changed:
                 return {"reported": {"evaluator_fingerprints": changed},
                         "pinned": {"evaluator_fingerprints": {k: pinned_fingerprints.get(k) for k in changed}},
                         "file": os.path.basename(f)}
@@ -689,6 +748,14 @@ def measurement(run_dir, pl):
         return False, {"required": True, "version_mismatch": mismatch,
                        "why": "%s was measured under %s; the plan pins %s"
                               % (mismatch["file"], mismatch["reported"], mismatch["pinned"])}
+    gaps = unmeasured(run_dir, req.get("evaluator_fingerprints") if req.get("required") else None)
+    if gaps:
+        files = sorted({g["file"] for g in gaps})
+        return False, {"required": True, "not_measured": gaps,
+                       "why": "incomplete measurement under the pinned version: NeoMundi did not "
+                              "measure %s in %d observation(s) (%s), reason %s"
+                              % (", ".join(sorted({g["evaluator"] for g in gaps})), len(files),
+                                 ", ".join(files), ", ".join(sorted({str(g["reason"]) for g in gaps})))}
     linked, link_detail = neomundi_client.verify_links(run_dir)
     if not req.get("required"):
         run_cfg = neomundi_client.run_config(run_dir) or {}
@@ -1257,6 +1324,12 @@ def day(a):
             stop_day = "%s at label %s: %s" % (status, label, note[:160])
     if not a.dry:
         day_anchor(sid, folder, pl, d)
+        # a round that leaves its day not closed ends with an error, so that the job fails and
+        # the owner is told at once, not only by the evening check
+        _, missing, open_ = day_state(folder, d)
+        if missing or open_:
+            raise SystemExit("DAY NOT CLOSED: without an attempt %s; not closed %s. The owner decides."
+                             % (", ".join(missing) or "none", ", ".join(open_) or "none"))
 
 
 def next_attempt(folder, d, label):

@@ -86,6 +86,12 @@ class TestTechnicalRun(unittest.TestCase):
     def harness_tags(self):
         return [a[a.index("--tag") + 1] for name, a, _ in self.calls if name == "harness.py"]
 
+    def day_not_closed(self, run):
+        # a round that leaves its day not closed ends with an error, so that the job fails
+        with self.assertRaises(SystemExit) as e:
+            run()
+        self.assertIn("DAY NOT CLOSED", str(e.exception))
+
     def ns(self, **kw):
         return types.SimpleNamespace(**kw)
 
@@ -130,7 +136,7 @@ class TestTechnicalRun(unittest.TestCase):
         self.confirm_command_a(sid, folder)
         self.assertTrue(series.jload(os.path.join(folder, "models.json"))["neomundi"]["enabled"])
         self.trip_after = 3
-        technical_run.day(self.ns(override=None, dry=False))
+        self.day_not_closed(lambda: technical_run.day(self.ns(override=None, dry=False)))
         self.assertEqual(len(self.harness_tags()), 3)
         self.assertIn("technical-%s-neomundi" % sid, neomundi_client.breaker_path(sid))
         held = [e for e in series.registry(folder) if e["status"] == "not_started"]
@@ -160,7 +166,7 @@ class TestTechnicalRun(unittest.TestCase):
         self.assertIn("could not be measured", str(e.exception))
         self.assertEqual(len(self.harness_tags()), 3)
         series.measurement_clear(self.ns(why="oversize found and fixed; the owner resumes the round"))
-        technical_run.day(self.ns(override=None, dry=False))
+        self.day_not_closed(lambda: technical_run.day(self.ns(override=None, dry=False)))
         self.assertEqual(sorted(self.harness_tags()), ["D01-%s" % c for c in "ABCDEFGH"])
         # the tripped purchase stays pending_measurement until its observations arrive or an
         # operator retries it: the anchor of the round remains provisional and names it
@@ -284,12 +290,12 @@ class TestTechnicalRun(unittest.TestCase):
         series.preflight = lambda folder, pl: None
         series.attempt_purchase = lambda *a, **k: started.append(a[4]) or ("frozen", "TP-Y", "")
         try:
-            series.day(self.ns(day=None, date=None, only=None, dry=False, override=None))
+            self.day_not_closed(lambda: series.day(self.ns(day=None, date=None, only=None, dry=False, override=None)))
             self.assertEqual(started, [])
             held = [e for e in series.registry(folder) if e["status"] == "not_started"]
             self.assertEqual(len(held), len(order) - 1)
             self.assertIn("model_drift at label %s earlier on this day" % order[0], held[0]["note"])
-            series.day(self.ns(day=None, date=None, only=order[1], dry=False, override=None))
+            self.day_not_closed(lambda: series.day(self.ns(day=None, date=None, only=order[1], dry=False, override=None)))
             self.assertEqual(started, [order[1]])
         finally:
             series.attempt_purchase, series.preflight = saved
@@ -331,7 +337,7 @@ class TestTechnicalRun(unittest.TestCase):
             series.day(self.ns(day=None, date=None, only=None, dry=True, override=None))
             self.assertFalse(os.path.exists(marker))                    # a dry run records nothing
             # the first start keeps its first purchase, then pays for the second and dies
-            series.day(self.ns(day=None, date=None, only=order[0], dry=False, override=None))
+            self.day_not_closed(lambda: series.day(self.ns(day=None, date=None, only=order[0], dry=False, override=None)))
             with open(marker, "a") as f:
                 f.write(order[1] + "#1 job\n")                         # paid, never kept
             started.clear()
@@ -416,7 +422,7 @@ class TestTechnicalRun(unittest.TestCase):
             return True, {"required": True}
         series.measurement = measured
         try:
-            technical_run.day(self.ns(override=None, dry=False))
+            self.day_not_closed(lambda: technical_run.day(self.ns(override=None, dry=False)))
             self.assertEqual(len(self.harness_tags()), 2)
             changed = [e for e in series.registry(folder) if e["status"] == "measurement_version_changed"]
             self.assertEqual(len(changed), 1)
@@ -567,6 +573,65 @@ class TestTechnicalRun(unittest.TestCase):
             series.current_series = saved
         self.assertFalse(os.path.exists(os.path.join(folder, series.MEASUREMENT_STOP_FILE)))
 
+    def test_an_evaluator_not_measured_is_an_incomplete_measurement_not_a_change_of_version(self):
+        # day 01 of S-20261027-8x30: NeoMundi 3.3.1 answered, but in some observations an
+        # evaluator was "not_measured" (its judge unavailable) and so had no fingerprints. That
+        # is an incomplete measurement under the same version, not a change of the instrument:
+        # the series stops as on any unusable measurement, under its true name
+        folder = os.path.join(series.SERIES, "S-N")
+        os.makedirs(folder)
+        pinned = {"/evaluators/f/config_fingerprint": "aaa", "/evaluators/f/inference_config_hash": "i1"}
+        pl = {"series": "S-N", "counted": True,
+              "neomundi": {"required": True, "config_file": "neomundi-config.json",
+                           "measurement_version": {"measurement_version": "3.3.1"},
+                           "evaluator_fingerprints": pinned}}
+
+        def response(run_id, n, status="measured", fp="aaa", ih="i1", reason=None):
+            run_dir = os.path.join(series.RUNS, run_id)
+            os.makedirs(os.path.join(run_dir, "neomundi", "responses"), exist_ok=True)
+            series.jdump(os.path.join(run_dir, "manifest.json"), {"run_id": run_id, "model_reported": "m"})
+            series.jdump(os.path.join(run_dir, "neomundi", "responses", "%s.C%04d.A1.1.json" % (run_id, n)),
+                         {"audit": {"measurement_version": "3.3.1"},
+                          "evaluators": {"f": {"status": status, "reason": reason,
+                                               "config_fingerprint": fp, "inference_config_hash": ih},
+                                         "g": {"status": "measured", "config_fingerprint": None}}})
+            return run_dir
+
+        run_dir = response("TP-N", 1)
+        response("TP-N", 2, status="not_measured", fp=None, ih=None, reason="hallucination_judge_unavailable")
+        response("TP-N", 3)
+        self.assertIsNone(series.version_mismatch(run_dir, {"measurement_version": "3.3.1"}, pinned))
+        self.assertIsNone(series.instrument_changed("TP-N", pl))
+        self.assertFalse(os.path.exists(os.path.join(folder, series.VERSION_STOP_FILE)))
+        ok, d = series.measurement(run_dir, pl)
+        self.assertFalse(ok)
+        self.assertNotIn("version_mismatch", d)
+        self.assertEqual([(g["file"], g["evaluator"]) for g in d["not_measured"]],
+                         [("TP-N.C0002.A1.1.json", "/evaluators/f")])
+        self.assertIn("incomplete measurement under the pinned version", d["why"])
+        self.assertIn("hallucination_judge_unavailable", d["why"])
+        series.run_cmd = lambda args, timeout=1800, extra_env=None: (0, "", "")
+        status, notes = series.analyse("TP-N", pl)
+        self.assertEqual(status, "pending_measurement")
+        self.assertIn(status, series.STOP_DAY)
+        self.assertTrue(os.path.exists(os.path.join(folder, series.MEASUREMENT_STOP_FILE)))
+        self.assertFalse(os.path.exists(os.path.join(folder, series.VERSION_STOP_FILE)))
+        self.assertIn("could not be measured", " ".join(series.neomundi_ready(folder, pl)))
+        # still a change of the instrument: a fingerprint missing from an evaluator that says
+        # it measured, or another value next to an evaluator that was not measured
+        run_dir = response("TP-M1", 1, fp=None)
+        self.assertIsNotNone(series.version_mismatch(run_dir, {"measurement_version": "3.3.1"}, pinned))
+        run_dir = response("TP-M2", 1, status="not_measured", fp=None, ih=None)
+        response("TP-M2", 2, fp="bbb")
+        m = series.version_mismatch(run_dir, {"measurement_version": "3.3.1"}, pinned)
+        self.assertEqual(m["reported"], {"evaluator_fingerprints": {"/evaluators/f/config_fingerprint": "bbb"}})
+        # and another version, whatever the evaluators say
+        run_dir = response("TP-M3", 1, status="not_measured", fp=None, ih=None)
+        series.jdump(os.path.join(run_dir, "neomundi", "responses", "TP-M3.C0001.A1.1.json"),
+                     {"audit": {"measurement_version": "3.4.0"},
+                      "evaluators": {"f": {"status": "not_measured", "config_fingerprint": None}}})
+        self.assertIsNotNone(series.version_mismatch(run_dir, {"measurement_version": "3.3.1"}, pinned))
+
     def test_a_bad_receipt_with_an_unusable_measurement_of_the_same_version_stops_the_series(self):
         # the receipt would fail its check, and the measurement is unusable under the same
         # version: the measurement is checked first, so the series stops all the same
@@ -688,7 +753,7 @@ class TestTechnicalRun(unittest.TestCase):
 
     def test_a_closed_window_starts_nothing(self):
         sid, folder = self.ready(window="00:00-00:01")
-        technical_run.day(self.ns(override=None, dry=False))
+        self.day_not_closed(lambda: technical_run.day(self.ns(override=None, dry=False)))
         self.assertEqual(self.harness_tags(), [])
         self.assertEqual({e["status"] for e in series.registry(folder)}, {"not_started"})
 
